@@ -38,6 +38,61 @@ const loadMaterials = async (model) => {
             ...model.materials[i]
         }
     }
-    console.log(materials);
     return materials;
 };
+
+const loadModel = async (files) => {
+	const ajs = await assimpjs();
+
+	const responses = await Promise.all(files.map((file) => fetch(file)));
+	const arrayBuffers = await Promise.all(responses.map((res) => res.arrayBuffer()));
+
+	let fileList = new ajs.FileList();
+	for (let i = 0; i < files.length; i++) {
+		fileList.AddFile(files[i], new Uint8Array(arrayBuffers[i]));
+	}
+
+	let result = ajs.ConvertFileList(fileList, 'assjson');
+
+	if (!result.IsSuccess() || result.FileCount() == 0) {
+		throw new Error(`Assimp conversion failed: ${result.GetErrorCode()}`);
+	}
+
+	let resultFile = result.GetFile(0);
+	let jsonContent = new TextDecoder().decode(resultFile.GetContent());
+
+	let resultJson = JSON.parse(jsonContent);
+
+	console.log(resultJson);
+	window.model = resultJson;
+
+	const materials = await loadMaterials(resultJson);
+
+	const meshes = [];
+	for (let mesh of resultJson.meshes) {
+		let vertices = [];
+		let indices = [];
+		let texcoords = [];
+		for (let i = 0; i < mesh.vertices.length; i += 3) {
+			mesh.vertices[i + 1] -= 1;
+			mesh.vertices[i + 2] -= 1;
+		}
+		indices.push(...(mesh.faces.flat()));
+		vertices.push(...mesh.vertices);
+		texcoords.push(...mesh.texturecoords[0]);
+		const vertexArray = new Float32Array(vertices);
+		const texcoordArray = new Float32Array(texcoords);
+		const indexArray = new Int16Array(indices);
+
+		const textureId = materials[mesh.materialindex]?.texture;
+
+		meshes.push({
+			vertices: vertexArray,
+			texcoords: texcoordArray,
+			indices: indexArray,
+			texture: textureId
+		});
+	}
+
+	return meshes;
+}
