@@ -3,24 +3,32 @@
   <head>
     <script id="vertex-shader" type="x-shader/x-vertex">
       attribute vec4 vPosition;
+      attribute vec2 aTexCoord;
+      varying vec2 vTexCoord;
       void main(){
         gl_Position = vPosition;
+        vTexCoord = aTexCoord;
       }
     </script>
     <script id="fragment-shader" type="x-shader/x-fragment">
       precision mediump float;
-      void main(){
-          gl_FragColor = vec4( 1.0, 0.0, 0.0, 1.0 );
+      varying vec2 vTexCoord;
+      uniform sampler2D uSampler;
+
+      void main(void) {
+        gl_FragColor = texture2D(uSampler, vTexCoord);
       }
     </script>
 
     <script type="text/javascript" src="Common/webgl-utils.js"></script>
     <script type="text/javascript" src="Common/initShaders.js"></script>
     <script type="text/javascript" src="Common/MV.js"></script>
+    <script type="text/javascript" src="assimp/assimpjs.js"></script>
+    <script type="text/javascript" src="utils.js"></script>
     <script type="text/javascript" src="triangle.js"></script>
   </head>
   <body>
-    <canvas id="gl-canvas" width="512" height="512">
+    <canvas id="gl-canvas" width="768" height="768">
       Oops ... your browser doesn't support the HTML5 canvas element
     </canvas>
   </body>
