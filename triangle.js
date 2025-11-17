@@ -16,8 +16,8 @@ window.onload = function init() {
     ];
 
     let lookAtMatrix = lookAt(
-        [0, 2, 3],
-        [0, 1, 0],
+        [0, 0, 2],
+        [0, 0, 0],
         [0, 10, 0]
     );
 
@@ -45,10 +45,12 @@ window.onload = function init() {
 
     let uMVPMatrix = gl.getUniformLocation(program, "uMVPMatrix");
     gl.uniformMatrix4fv(uMVPMatrix, false, flatten(MVPMatrix));
+    let uLightPosition = gl.getUniformLocation(program, "uLightPosition");
+    gl.uniform3f(uLightPosition, 0, 2, 50);
     render();
 
     loadModel([
-        'miku-hatsune-vocaloid-rigged/source/MIKU VOCALOID RIGGED.glb',
+        'robotModel/robofella.glb',
     ]).then(meshes => {
         loadModel([
             'nnd-compass-saber-alter-t0/nnd_compass_saber_alter_t0.glb'
@@ -63,16 +65,23 @@ function renderMeshes(program, meshes) {
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.enable(gl.DEPTH_TEST);
     let vPosition = gl.getAttribLocation(program, "vPosition");
+    let aNormal = gl.getAttribLocation(program, "aNormal");
     let aTexCoord = gl.getAttribLocation(program, "aTexCoord");
     let uSampler = gl.getUniformLocation(program, "uSampler");
     let bufferId = gl.createBuffer();
     let texCoordBuffer = gl.createBuffer();
+    let normalBuffer = gl.createBuffer();
     let indexBufferId = gl.createBuffer();
     for (let mesh of meshes) {
         gl.enableVertexAttribArray(vPosition);
         gl.bindBuffer(gl.ARRAY_BUFFER, bufferId);
         gl.bufferData(gl.ARRAY_BUFFER, mesh.vertices, gl.STATIC_DRAW);
         gl.vertexAttribPointer(vPosition, 3, gl.FLOAT, false, 0, 0);
+
+        gl.enableVertexAttribArray(aNormal);
+        gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, mesh.normals, gl.STATIC_DRAW);
+        gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, 0, 0);
 
         gl.enableVertexAttribArray(aTexCoord);
         gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);

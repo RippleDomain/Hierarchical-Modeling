@@ -71,12 +71,15 @@ const loadModel = async (files) => {
 	const meshes = [];
 	for (let mesh of resultJson.meshes) {
 		let vertices = [];
+		let normals = [];
 		let indices = [];
 		let texcoords = [];
 		indices.push(...(mesh.faces.flat()));
 		vertices.push(...mesh.vertices);
+		normals.push(...mesh.normals);
 		texcoords.push(...mesh.texturecoords[0]);
 		const vertexArray = new Float32Array(vertices);
+		const normalArray = new Float32Array(normals);
 		const texcoordArray = new Float32Array(texcoords);
 		const indexArray = new Int16Array(indices);
 
@@ -84,6 +87,7 @@ const loadModel = async (files) => {
 
 		meshes.push({
 			vertices: vertexArray,
+			normals: normalArray,
 			texcoords: texcoordArray,
 			indices: indexArray,
 			texture: textureId
