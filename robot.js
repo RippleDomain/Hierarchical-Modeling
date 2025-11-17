@@ -127,6 +127,29 @@ function constrainAngle(jointId, angleValue) {
 var animate = false;
 var animationSpeed = 1.0;
 
+// Mouse picking and dragging
+var selectedLimbId = null;  // Currently selected limb node ID
+var selectedAngleId = null; // Primary angle to control (pitch)
+var selectedSideAngleId = null; // Secondary angle to control (side movement/yaw)
+var isDragging = false;
+var lastMouseX = 0;
+var lastMouseY = 0;
+var dragSensitivity = 1.5;  // Degrees per pixel
+
+// Mapping from node IDs to their angle IDs (primary and secondary)
+var nodeToAngleMap = {
+    [torsoId]: { primary: torsoId, secondary: null },
+    [headId]: { primary: head1Id, secondary: head2Id },
+    [leftUpperArmId]: { primary: leftUpperArmId, secondary: leftUpperArmSideId },
+    [leftLowerArmId]: { primary: leftLowerArmId, secondary: null },
+    [rightUpperArmId]: { primary: rightUpperArmId, secondary: rightUpperArmSideId },
+    [rightLowerArmId]: { primary: rightLowerArmId, secondary: null },
+    [leftUpperLegId]: { primary: leftUpperLegId, secondary: leftUpperLegSideId },
+    [leftLowerLegId]: { primary: leftLowerLegId, secondary: null },
+    [rightUpperLegId]: { primary: rightUpperLegId, secondary: rightUpperLegSideId },
+    [rightLowerLegId]: { primary: rightLowerLegId, secondary: null }
+};
+
 // Toggle animation function (called from HTML)
 function toggleAnimation() {
     animate = !animate;
@@ -279,6 +302,318 @@ function traverse(Id) {
     if (figure[Id].sibling != null) traverse(figure[Id].sibling);
 }
 
+// Tree traversal for outline rendering
+function traverseOutline(Id) {
+    if (Id == null) return;
+
+    stack.push(modelViewMatrix);
+    modelViewMatrix = mult(modelViewMatrix, figure[Id].transform);
+
+    // Render outline if this is the selected limb
+    if (Id === selectedLimbId) {
+        renderOutline(Id);
+    }
+
+    if (figure[Id].child != null) traverseOutline(figure[Id].child);
+    modelViewMatrix = stack.pop();
+    if (figure[Id].sibling != null) traverseOutline(figure[Id].sibling);
+}
+
+// Alternative: Direct outline rendering without traversal
+function renderSelectedLimbOutline() {
+    if (selectedLimbId === null) return;
+    
+    // Re-traverse to the selected limb and render outline
+    modelViewMatrix = mat4();
+    traverseToLimbAndRenderOutline(torsoId, selectedLimbId);
+}
+
+// Traverse to find and render outline for specific limb
+function traverseToLimbAndRenderOutline(currentId, targetId) {
+    if (currentId == null) return false;
+    
+    stack.push(modelViewMatrix);
+    modelViewMatrix = mult(modelViewMatrix, figure[currentId].transform);
+    
+    if (currentId === targetId) {
+        renderOutline(targetId);
+        modelViewMatrix = stack.pop();
+        return true;
+    }
+    
+    var found = false;
+    if (figure[currentId].child != null) {
+        found = traverseToLimbAndRenderOutline(figure[currentId].child, targetId);
+    }
+    
+    if (!found) {
+        modelViewMatrix = stack.pop();
+        if (figure[currentId].sibling != null) {
+            found = traverseToLimbAndRenderOutline(figure[currentId].sibling, targetId);
+        }
+        if (!found) {
+            return false;
+        }
+    } else {
+        modelViewMatrix = stack.pop();
+    }
+    
+    return found;
+}
+
+// Edge indices for wireframe rendering (12 edges of a cube)
+var cubeEdges = [
+    0, 1, 1, 2, 2, 3, 3, 0,  // Front face
+    4, 5, 5, 6, 6, 7, 7, 4,  // Back face
+    0, 4, 1, 5, 2, 6, 3, 7   // Connecting edges
+];
+
+// Edge indices for wireframe (12 edges, each with 2 vertices)
+var wireframeIndices = [
+    0, 1,  1, 2,  2, 3,  3, 0,  // Front face
+    4, 5,  5, 6,  6, 7,  7, 4,  // Back face
+    0, 4,  1, 5,  2, 6,  3, 7   // Connecting edges
+];
+
+// Render cube wireframe using the current instanceMatrix
+// The instanceMatrix is already set by the calling render function
+function renderCubeWireframe() {
+    // Create edge vertex buffer from cube vertices
+    var edgeVertices = [];
+    for (var i = 0; i < wireframeIndices.length; i++) {
+        edgeVertices.push(vertices[wireframeIndices[i]]);
+    }
+    
+    // Create temporary buffer for edges
+    var edgeBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, edgeBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, flatten(edgeVertices), gl.STATIC_DRAW);
+    
+    var vPosition = gl.getAttribLocation(program, "vPosition");
+    gl.vertexAttribPointer(vPosition, 4, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(vPosition);
+    
+    // Render all edges as lines (instanceMatrix uniform is already set)
+    gl.drawArrays(gl.LINES, 0, edgeVertices.length);
+    
+    // Clean up
+    gl.deleteBuffer(edgeBuffer);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);  // Restore original vertex buffer
+    gl.vertexAttribPointer(vPosition, 4, gl.FLOAT, false, 0, 0);
+}
+
+// Render wireframe outline for a selected limb
+function renderOutline(limbId) {
+    if (!figure[limbId] || !figure[limbId].render || !figure[limbId].render.renderWireframe) {
+        return;
+    }
+
+    var vColor    = gl.getAttribLocation(program, "vColor");
+    var vPosition = gl.getAttribLocation(program, "vPosition");
+
+    gl.disable(gl.DEPTH_TEST);
+    try {
+        gl.lineWidth(2.0);
+    } catch (e) {
+        
+    }
+
+    gl.disableVertexAttribArray(vColor);
+    gl.vertexAttrib4f(vColor, 0.0, 0.0, 0.0, 1.0);
+
+    // renderWireframe is attached to the *render* function, not the node itself
+    var renderFunc = figure[limbId].render;
+    renderFunc.renderWireframe();
+    // Optional second pass to make outline appear bolder
+    renderFunc.renderWireframe();
+
+    // Re-enable depth test
+    gl.enable(gl.DEPTH_TEST);
+    try {
+        gl.lineWidth(1.0);
+    } catch (e) {}
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
+    gl.enableVertexAttribArray(vColor);
+    gl.vertexAttribPointer(vColor, 4, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
+    gl.vertexAttribPointer(vPosition, 4, gl.FLOAT, false, 0, 0);
+}
+
+// Convert node ID to unique picking color (RGB, each component 0-1)
+function nodeIdToColor(nodeId) {
+    // Map node IDs to colors (R, G, B)
+    var colorMap = {
+        [torsoId]: vec4(1.0, 0.0, 0.0, 1.0),      // Red
+        [headId]: vec4(0.0, 1.0, 0.0, 1.0),       // Green
+        [leftUpperArmId]: vec4(0.0, 0.0, 1.0, 1.0),    // Blue
+        [leftLowerArmId]: vec4(1.0, 1.0, 0.0, 1.0),    // Yellow
+        [rightUpperArmId]: vec4(1.0, 0.0, 1.0, 1.0),  // Magenta
+        [rightLowerArmId]: vec4(0.0, 1.0, 1.0, 1.0),  // Cyan
+        [leftUpperLegId]: vec4(0.5, 0.0, 0.0, 1.0),   // Dark Red
+        [leftLowerLegId]: vec4(0.0, 0.5, 0.0, 1.0),   // Dark Green
+        [rightUpperLegId]: vec4(0.0, 0.0, 0.5, 1.0),  // Dark Blue
+        [rightLowerLegId]: vec4(0.5, 0.5, 0.0, 1.0)   // Dark Yellow
+    };
+    return colorMap[nodeId] || vec4(0.5, 0.5, 0.5, 1.0);
+}
+
+// Convert color back to node ID with better tolerance
+function colorToNodeId(r, g, b) {
+    var tolerance = 0.2;
+    
+    // Check each color with tolerance
+    var colorTests = [
+        { r: 1.0, g: 0.0, b: 0.0, id: torsoId },
+        { r: 0.0, g: 1.0, b: 0.0, id: headId },
+        { r: 0.0, g: 0.0, b: 1.0, id: leftUpperArmId },
+        { r: 1.0, g: 1.0, b: 0.0, id: leftLowerArmId },
+        { r: 1.0, g: 0.0, b: 1.0, id: rightUpperArmId },
+        { r: 0.0, g: 1.0, b: 1.0, id: rightLowerArmId },
+        { r: 0.5, g: 0.0, b: 0.0, id: leftUpperLegId },
+        { r: 0.0, g: 0.5, b: 0.0, id: leftLowerLegId },
+        { r: 0.0, g: 0.0, b: 0.5, id: rightUpperLegId },
+        { r: 0.5, g: 0.5, b: 0.0, id: rightLowerLegId }
+    ];
+    
+    // Find closest match
+    var bestMatch = null;
+    var minDistance = Infinity;
+    
+    for (var i = 0; i < colorTests.length; i++) {
+        var test = colorTests[i];
+        var distance = Math.sqrt(
+            Math.pow(r - test.r, 2) +
+            Math.pow(g - test.g, 2) +
+            Math.pow(b - test.b, 2)
+        );
+        if (distance < minDistance && distance < tolerance) {
+            minDistance = distance;
+            bestMatch = test.id;
+        }
+    }
+    
+    return bestMatch;
+}
+
+// Simplified picking: render with unique colors to offscreen buffer
+var pickingMode = false;
+var pickingColorUniform = null;
+
+// Render scene in picking mode (each limb with unique color)
+function renderPickingScene() {
+    pickingMode = true;
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    
+    // Render with picking colors
+    modelViewMatrix = mat4();
+    traversePicking(torsoId);
+    
+    pickingMode = false;
+    
+    // Restore original colors after picking
+    gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, flatten(colorsArray), gl.STATIC_DRAW);
+}
+
+// Traverse and render with picking colors
+function traversePicking(Id) {
+    if (Id == null) return;
+    
+    stack.push(modelViewMatrix);
+    modelViewMatrix = mult(modelViewMatrix, figure[Id].transform);
+    
+    // Render with picking color
+    renderLimbWithPickingColor(Id);
+    
+    if (figure[Id].child != null) traversePicking(figure[Id].child);
+    modelViewMatrix = stack.pop();
+    if (figure[Id].sibling != null) traversePicking(figure[Id].sibling);
+}
+
+// Render a limb with its picking color
+var pickingColorsBuffer = null;
+
+function renderLimbWithPickingColor(limbId) {
+    var pickingColor = nodeIdToColor(limbId);
+    
+    // Create picking colors array (all faces use the same picking color)
+    var pickingColors = [];
+    for (var i = 0; i < 24; i++) {  // 24 vertices for a cube (6 faces * 4 vertices)
+        pickingColors.push(pickingColor);
+    }
+    
+    // Update color buffer with picking colors
+    gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, flatten(pickingColors), gl.STATIC_DRAW);
+    
+    // Render
+    figure[limbId].render();
+}
+
+// Pick limb at mouse coordinates
+function pickLimb(x, y) {
+    // Ensure coordinates are within canvas bounds
+    if (x < 0 || x >= canvas.width || y < 0 || y >= canvas.height) {
+        return null;
+    }
+    
+    // Create offscreen framebuffer
+    var pickingFBO = gl.createFramebuffer();
+    var pickingTexture = gl.createTexture();
+    var pickingRenderbuffer = gl.createRenderbuffer();
+    
+    gl.bindTexture(gl.TEXTURE_2D, pickingTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, canvas.width, canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    
+    gl.bindRenderbuffer(gl.RENDERBUFFER, pickingRenderbuffer);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, canvas.width, canvas.height);
+    
+    gl.bindFramebuffer(gl.FRAMEBUFFER, pickingFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, pickingTexture, 0);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, pickingRenderbuffer);
+    
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.deleteFramebuffer(pickingFBO);
+        gl.deleteTexture(pickingTexture);
+        gl.deleteRenderbuffer(pickingRenderbuffer);
+        return null;
+    }
+    
+    // Set viewport for picking
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    
+    // Render picking scene
+    renderPickingScene();
+    
+    // Read pixel (flip Y coordinate)
+    var pixel = new Uint8Array(4);
+    gl.readPixels(x, canvas.height - y - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+    
+    // Clean up
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, canvas.width, canvas.height);  // Restore viewport
+    gl.deleteFramebuffer(pickingFBO);
+    gl.deleteTexture(pickingTexture);
+    gl.deleteRenderbuffer(pickingRenderbuffer);
+    
+    // Convert to node ID
+    var r = pixel[0] / 255.0;
+    var g = pixel[1] / 255.0;
+    var b = pixel[2] / 255.0;
+    
+    // Check if we hit background (white or near-white)
+    if (r > 0.9 && g > 0.9 && b > 0.9) {
+        return null;
+    }
+    
+    return colorToNodeId(r, g, b);
+}
+
 // Rendering functions for each body part
 function torso() {
     instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * torsoHeight, 0.0));
@@ -289,6 +624,14 @@ function torso() {
     }
 }
 
+// Wireframe rendering for torso
+torso.renderWireframe = function() {
+    instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * torsoHeight, 0.0));
+    instanceMatrix = mult(instanceMatrix, scale4(torsoWidth, torsoHeight, torsoWidth));
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(instanceMatrix));
+    renderCubeWireframe();
+}
+
 function head() {
     instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * headHeight, 0.0));
     instanceMatrix = mult(instanceMatrix, scale4(headWidth, headHeight, headWidth));
@@ -296,6 +639,12 @@ function head() {
     for (var i = 0; i < 6; i++) {
         gl.drawArrays(gl.TRIANGLE_FAN, 4 * i, 4);
     }
+}
+head.renderWireframe = function() {
+    instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * headHeight, 0.0));
+    instanceMatrix = mult(instanceMatrix, scale4(headWidth, headHeight, headWidth));
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(instanceMatrix));
+    renderCubeWireframe();
 }
 
 function leftUpperArm() {
@@ -306,6 +655,12 @@ function leftUpperArm() {
         gl.drawArrays(gl.TRIANGLE_FAN, 4 * i, 4);
     }
 }
+leftUpperArm.renderWireframe = function() {
+    instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * upperArmHeight, 0.0));
+    instanceMatrix = mult(instanceMatrix, scale4(upperArmWidth, upperArmHeight, upperArmWidth));
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(instanceMatrix));
+    renderCubeWireframe();
+}
 
 function leftLowerArm() {
     instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * lowerArmHeight, 0.0));
@@ -314,6 +669,12 @@ function leftLowerArm() {
     for (var i = 0; i < 6; i++) {
         gl.drawArrays(gl.TRIANGLE_FAN, 4 * i, 4);
     }
+}
+leftLowerArm.renderWireframe = function() {
+    instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * lowerArmHeight, 0.0));
+    instanceMatrix = mult(instanceMatrix, scale4(lowerArmWidth, lowerArmHeight, lowerArmWidth));
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(instanceMatrix));
+    renderCubeWireframe();
 }
 
 function rightUpperArm() {
@@ -324,6 +685,12 @@ function rightUpperArm() {
         gl.drawArrays(gl.TRIANGLE_FAN, 4 * i, 4);
     }
 }
+rightUpperArm.renderWireframe = function() {
+    instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * upperArmHeight, 0.0));
+    instanceMatrix = mult(instanceMatrix, scale4(upperArmWidth, upperArmHeight, upperArmWidth));
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(instanceMatrix));
+    renderCubeWireframe();
+}
 
 function rightLowerArm() {
     instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * lowerArmHeight, 0.0));
@@ -332,6 +699,12 @@ function rightLowerArm() {
     for (var i = 0; i < 6; i++) {
         gl.drawArrays(gl.TRIANGLE_FAN, 4 * i, 4);
     }
+}
+rightLowerArm.renderWireframe = function() {
+    instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * lowerArmHeight, 0.0));
+    instanceMatrix = mult(instanceMatrix, scale4(lowerArmWidth, lowerArmHeight, lowerArmWidth));
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(instanceMatrix));
+    renderCubeWireframe();
 }
 
 function leftUpperLeg() {
@@ -342,6 +715,12 @@ function leftUpperLeg() {
         gl.drawArrays(gl.TRIANGLE_FAN, 4 * i, 4);
     }
 }
+leftUpperLeg.renderWireframe = function() {
+    instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * upperLegHeight, 0.0));
+    instanceMatrix = mult(instanceMatrix, scale4(upperLegWidth, upperLegHeight, upperLegWidth));
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(instanceMatrix));
+    renderCubeWireframe();
+}
 
 function leftLowerLeg() {
     instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * lowerLegHeight, 0.0));
@@ -350,6 +729,12 @@ function leftLowerLeg() {
     for (var i = 0; i < 6; i++) {
         gl.drawArrays(gl.TRIANGLE_FAN, 4 * i, 4);
     }
+}
+leftLowerLeg.renderWireframe = function() {
+    instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * lowerLegHeight, 0.0));
+    instanceMatrix = mult(instanceMatrix, scale4(lowerLegWidth, lowerLegHeight, lowerLegWidth));
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(instanceMatrix));
+    renderCubeWireframe();
 }
 
 function rightUpperLeg() {
@@ -360,6 +745,12 @@ function rightUpperLeg() {
         gl.drawArrays(gl.TRIANGLE_FAN, 4 * i, 4);
     }
 }
+rightUpperLeg.renderWireframe = function() {
+    instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * upperLegHeight, 0.0));
+    instanceMatrix = mult(instanceMatrix, scale4(upperLegWidth, upperLegHeight, upperLegWidth));
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(instanceMatrix));
+    renderCubeWireframe();
+}
 
 function rightLowerLeg() {
     instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * lowerLegHeight, 0.0));
@@ -368,6 +759,12 @@ function rightLowerLeg() {
     for (var i = 0; i < 6; i++) {
         gl.drawArrays(gl.TRIANGLE_FAN, 4 * i, 4);
     }
+}
+rightLowerLeg.renderWireframe = function() {
+    instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * lowerLegHeight, 0.0));
+    instanceMatrix = mult(instanceMatrix, scale4(lowerLegWidth, lowerLegHeight, lowerLegWidth));
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(instanceMatrix));
+    renderCubeWireframe();
 }
 
 // Create quad face of cube (4 vertices for TRIANGLE_FAN)
@@ -581,6 +978,128 @@ window.onload = function init() {
         initNodes(j);
     }
 
+    // Mouse event handlers for picking and dragging
+    canvas.addEventListener("mousedown", function(event) {
+        var rect = canvas.getBoundingClientRect();
+        var x = event.clientX - rect.left;
+        var y = event.clientY - rect.top;
+        
+        var pickedId = pickLimb(x, y);
+        if (pickedId !== null) {  // Allow picking all limbs including torso
+            selectedLimbId = pickedId;
+            var angleMapping = nodeToAngleMap[pickedId];
+            selectedAngleId = angleMapping.primary;
+            selectedSideAngleId = angleMapping.secondary;
+            isDragging = true;
+            lastMouseX = x;
+            lastMouseY = y;
+            canvas.style.cursor = "grabbing";
+            event.preventDefault();  // Prevent default to improve dragging
+        } else {
+            // Deselect if clicking on empty space
+            selectedLimbId = null;
+            selectedAngleId = null;
+            selectedSideAngleId = null;
+        }
+    });
+
+    canvas.addEventListener("mousemove", function(event) {
+        var rect = canvas.getBoundingClientRect();
+        var x = event.clientX - rect.left;
+        var y = event.clientY - rect.top;
+        
+        if (isDragging && selectedAngleId !== null) {
+            var deltaX = x - lastMouseX;
+            var deltaY = y - lastMouseY;
+            
+            // Map mouse movement to angle changes
+            // Horizontal (X) movement controls primary angle (pitch)
+            if (deltaX !== 0) {
+                var angleDeltaX = deltaX * dragSensitivity;
+                theta[selectedAngleId] = constrainAngle(
+                    selectedAngleId,
+                    theta[selectedAngleId] + angleDeltaX
+                );
+                updateSliderForAngle(selectedAngleId);
+            }
+            
+            // Vertical (Y) movement controls secondary angle (side movement/yaw) if available
+            if (deltaY !== 0 && selectedSideAngleId !== null) {
+                var angleDeltaY = -deltaY * dragSensitivity;  // Negative for intuitive control
+                theta[selectedSideAngleId] = constrainAngle(
+                    selectedSideAngleId,
+                    theta[selectedSideAngleId] + angleDeltaY
+                );
+                updateSliderForAngle(selectedSideAngleId);
+            }
+            
+            // Reinitialize affected nodes
+            if (selectedLimbId === headId) {
+                initNodes(headId);
+            } else if (selectedLimbId === torsoId) {
+                initNodes(torsoId);
+            } else {
+                initNodes(selectedLimbId);
+            }
+            
+            lastMouseX = x;
+            lastMouseY = y;
+            event.preventDefault();  // Prevent default for smoother dragging
+        }
+    });
+
+    canvas.addEventListener("mouseup", function(event) {
+        if (isDragging) {
+            isDragging = false;
+            canvas.style.cursor = "default";
+            event.preventDefault();
+        }
+    });
+
+    canvas.addEventListener("mouseleave", function(event) {
+        if (isDragging) {
+            isDragging = false;
+            canvas.style.cursor = "default";
+        }
+    });
+    
+    // Also handle mouseup outside canvas for better UX
+    document.addEventListener("mouseup", function(event) {
+        if (isDragging) {
+            isDragging = false;
+            canvas.style.cursor = "default";
+        }
+    });
+
+    // Function to update slider value for an angle
+    function updateSliderForAngle(angleId) {
+        var sliderMap = {
+            [torsoId]: "slider0",
+            [head1Id]: "slider1",
+            [head2Id]: "slider10",
+            [leftUpperArmId]: "slider2",
+            [leftLowerArmId]: "slider3",
+            [rightUpperArmId]: "slider4",
+            [rightLowerArmId]: "slider5",
+            [leftUpperLegId]: "slider6",
+            [leftLowerLegId]: "slider7",
+            [rightUpperLegId]: "slider8",
+            [rightLowerLegId]: "slider9",
+            [leftUpperArmSideId]: "slider11",
+            [rightUpperArmSideId]: "slider12",
+            [leftUpperLegSideId]: "slider13",
+            [rightUpperLegSideId]: "slider14"
+        };
+        
+        var sliderId = sliderMap[angleId];
+        if (sliderId) {
+            var slider = document.getElementById(sliderId);
+            if (slider) {
+                slider.value = theta[angleId];
+            }
+        }
+    }
+
     render();
 };
 
@@ -605,7 +1124,15 @@ var render = function () {
 
     modelViewMatrix = mat4();
 
+    // Render normal scene
     traverse(torsoId);
+    
+    // Render outline for selected limb (after normal rendering)
+    if (selectedLimbId !== null) {
+        modelViewMatrix = mat4();
+        // Render outline by finding and rendering the selected limb
+        renderSelectedLimbOutline();
+    }
 
     requestAnimFrame(render);
 };

@@ -28,6 +28,31 @@
     }
     </script>
 
+    <script id="picking-vertex-shader" type="x-shader/x-vertex">
+    attribute  vec4 vPosition;
+    uniform    mat4 modelViewMatrix;
+    uniform    mat4 projectionMatrix;
+    uniform    vec4 pickingColor;
+
+    varying vec4 vPickingColor;
+
+    void main()
+    {
+        vPickingColor = pickingColor;
+        gl_Position = projectionMatrix * modelViewMatrix * vPosition;
+    }
+    </script>
+
+    <script id="picking-fragment-shader" type="x-shader/x-fragment">
+    precision mediump float;
+    varying vec4 vPickingColor;
+
+    void main()
+    {
+        gl_FragColor = vPickingColor;
+    }
+    </script>
+
     <script type="text/javascript" src="Common/webgl-utils.js"></script>
     <script type="text/javascript" src="Common/initShaders.js"></script>
     <script type="text/javascript" src="Common/MV.js"></script>
