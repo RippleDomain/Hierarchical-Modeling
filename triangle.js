@@ -15,6 +15,16 @@ window.onload = function init() {
         vec2(1, -1)
     ];
 
+    let lookAtMatrix = lookAt(
+        [0, 2, 3],
+        [0, 1, 0],
+        [0, 10, 0]
+    );
+
+    let projectionMatrix = perspective(45, canvas.width / canvas.height, 0.1, 100);
+
+    let MVPMatrix = mult(projectionMatrix, lookAtMatrix);
+    
     // Configure WebGL   
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(1.0, 1.0, 1.0, 1.0);
@@ -32,6 +42,9 @@ window.onload = function init() {
     let vPosition = gl.getAttribLocation(program, "vPosition");
     gl.vertexAttribPointer(vPosition, 2, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(vPosition);
+
+    let uMVPMatrix = gl.getUniformLocation(program, "uMVPMatrix");
+    gl.uniformMatrix4fv(uMVPMatrix, false, flatten(MVPMatrix));
     render();
 
     loadModel([
@@ -40,7 +53,7 @@ window.onload = function init() {
         loadModel([
             'nnd-compass-saber-alter-t0/nnd_compass_saber_alter_t0.glb'
         ]).then(meshes2 => {
-            renderMeshes(program, [...meshes, ...meshes2]);
+            renderMeshes(program, meshes);
         });
     });
 };
@@ -48,6 +61,7 @@ window.onload = function init() {
 function renderMeshes(program, meshes) {
     console.log(meshes);
     gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
     let vPosition = gl.getAttribLocation(program, "vPosition");
     let aTexCoord = gl.getAttribLocation(program, "aTexCoord");
     let uSampler = gl.getUniformLocation(program, "uSampler");

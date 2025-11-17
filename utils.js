@@ -73,10 +73,6 @@ const loadModel = async (files) => {
 		let vertices = [];
 		let indices = [];
 		let texcoords = [];
-		for (let i = 0; i < mesh.vertices.length; i += 3) {
-			mesh.vertices[i + 1] -= 1;
-			mesh.vertices[i + 2] -= 1;
-		}
 		indices.push(...(mesh.faces.flat()));
 		vertices.push(...mesh.vertices);
 		texcoords.push(...mesh.texturecoords[0]);
