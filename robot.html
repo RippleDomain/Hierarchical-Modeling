@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Hierarchical Robot</title>
+
+    <script id="vertex-shader" type="x-shader/x-vertex">
+    attribute  vec4 vPosition;
+    attribute  vec4 vColor;
+    varying    vec4 fColor;
+    uniform    mat4 modelViewMatrix;
+    uniform    mat4 projectionMatrix;
+
+    void main()
+    {
+        fColor      = vColor;
+        gl_Position = projectionMatrix * modelViewMatrix * vPosition;
+    }
+    </script>
+
+    <script id="fragment-shader" type="x-shader/x-fragment">
+    precision mediump float;
+    varying   vec4 fColor;
+
+    void main()
+    {
+        gl_FragColor = fColor;
+    }
+    </script>
+
+    <script type="text/javascript" src="Common/webgl-utils.js"></script>
+    <script type="text/javascript" src="Common/initShaders.js"></script>
+    <script type="text/javascript" src="Common/MV.js"></script>
+    <script type="text/javascript" src="robot.js"></script>
+</head>
+<body>
+
+<h3>Torso &amp; Head</h3>
+
+<div>
+  Torso rotation (twist) -180
+  <input id="slider0" type="range"
+         min="-180" max="180" step="5" value="0" />
+  180
+</div><br/>
+
+<div>
+  Head turn (yaw) -80
+  <input id="slider10" type="range"
+         min="-80" max="80" step="5" value="0" />
+  80
+</div><br/>
+
+<div>
+  Head nod (pitch) -45
+  <input id="slider1" type="range"
+         min="-45" max="45" step="5" value="0" />
+  45
+</div><br/>
+
+
+<h3>Left Arm</h3>
+
+<div>
+  Left shoulder pitch (front/back) -180
+  <input id="slider2" type="range"
+         min="-180" max="0" step="5" value="0" />
+  0
+</div><br/>
+
+<div>
+  Left shoulder abduction (side raise) 0
+  <input id="slider11" type="range"
+         min="0" max="110" step="5" value="0" />
+  110
+</div><br/>
+
+<div>
+  Left elbow flex -135
+  <input id="slider3" type="range"
+         min="-135" max="0" step="5" value="0" />
+  0
+</div><br/>
+
+
+<h3>Right Arm</h3>
+
+<div>
+  Right shoulder pitch (front/back) 0
+  <input id="slider4" type="range"
+         min="0" max="180" step="5" value="0" />
+  180
+</div><br/>
+
+<div>
+  Right shoulder abduction (side raise) -110
+  <input id="slider12" type="range"
+         min="-110" max="0" step="5" value="0" />
+  0
+</div><br/>
+
+<div>
+  Right elbow flex -135
+  <input id="slider5" type="range"
+         min="-135" max="0" step="5" value="0" />
+  0
+</div><br/>
+
+
+<h3>Left Leg</h3>
+
+<div>
+  Left hip pitch (front/back) -45
+  <input id="slider6" type="range"
+         min="-45" max="75" step="5" value="0" />
+  75
+</div><br/>
+
+<div>
+  Left hip abduction (side) -30
+  <input id="slider13" type="range"
+         min="-30" max="30" step="5" value="0" />
+  30
+</div><br/>
+
+<div>
+  Left knee flex 0
+  <input id="slider7" type="range"
+         min="0" max="135" step="5" value="0" />
+  135
+</div><br/>
+
+
+<h3>Right Leg</h3>
+
+<div>
+  Right hip pitch (front/back) -45
+  <input id="slider8" type="range"
+         min="-45" max="75" step="5" value="0" />
+  75
+</div><br/>
+
+<div>
+  Right hip abduction (side) -30
+  <input id="slider14" type="range"
+         min="-30" max="30" step="5" value="0" />
+  30
+</div><br/>
+
+<div>
+  Right knee flex 0
+  <input id="slider9" type="range"
+         min="0" max="135" step="5" value="0" />
+  135
+</div><br/>
+
+
+<div>
+  <button id="animateBtn" onclick="toggleAnimation()">Start Animation</button>
+</div><br/>
+
+<canvas id="gl-canvas" width="512" height="512">
+  Oops ... your browser doesn't support the HTML5 canvas element
+</canvas>
+
+</body>
+</html>
