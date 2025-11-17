@@ -39,6 +39,8 @@ var leftUpperArmSideId  = 11;
 var rightUpperArmSideId = 12;
 var leftUpperLegSideId  = 13;
 var rightUpperLegSideId = 14;
+var leftHandId = 15;
+var rightHandId = 16;
 
 // Robot dimensions
 var torsoHeight     = 5.0;
@@ -53,9 +55,11 @@ var lowerLegHeight  = 2.0;
 var upperLegHeight  = 3.0;
 var headHeight      = 1.5;
 var headWidth       = 1.0;
+var handHeight      = 1.0;
+var handWidth       = 0.5;
 
-var numNodes  = 10;
-var numAngles = 15;
+var numNodes  = 17;
+var numAngles = 17;
 var angle     = 0;
 
 // Rotation angles for each joint (in degrees)
@@ -78,7 +82,9 @@ var theta = [
     0,  // left shoulder abduction
     0,  // right shoulder abduction
     0,  // left hip abduction
-    0   // right hip abduction
+    0,   // right hip abduction
+    0,  // left hand bend (inward)
+    0   // right hand bend (inward)
 ];
 
 // Joint angle constraints (min, max) in degrees
@@ -110,7 +116,11 @@ var jointConstraints = {
 
     // Leg abduction/adduction (side)
     [leftUpperLegSideId]:  [-30, 30],
-    [rightUpperLegSideId]: [-30, 30]
+    [rightUpperLegSideId]: [-30, 30],
+
+    // Hands (inward rotation)
+    [leftHandId]:       [0, 45],
+    [rightHandId]:      [0, 45]
 };
 
 // Constrain angle to valid range for a joint
@@ -147,7 +157,9 @@ var nodeToAngleMap = {
     [leftUpperLegId]: { primary: leftUpperLegId, secondary: leftUpperLegSideId },
     [leftLowerLegId]: { primary: leftLowerLegId, secondary: null },
     [rightUpperLegId]: { primary: rightUpperLegId, secondary: rightUpperLegSideId },
-    [rightLowerLegId]: { primary: rightLowerLegId, secondary: null }
+    [rightLowerLegId]: { primary: rightLowerLegId, secondary: null },
+    [leftHandId]:      { primary: leftHandId,     secondary: null },
+    [rightHandId]:     { primary: rightHandId,    secondary: null }
 };
 
 // Toggle animation function (called from HTML)
@@ -262,14 +274,15 @@ function initNodes(Id) {
         case leftLowerArmId:
             m = translate(0.0, upperArmHeight, 0.0);
             m = mult(m, rotate(theta[leftLowerArmId], 1, 0, 0));         // 0 = straight, + = flex
-            figure[leftLowerArmId] = createNode(m, leftLowerArm, null, null);
+            figure[leftLowerArmId] = createNode(m, leftLowerArm, null, leftHandId);  // child: hand
             break;
-
+    
         case rightLowerArmId:
             m = translate(0.0, upperArmHeight, 0.0);
             m = mult(m, rotate(theta[rightLowerArmId], 1, 0, 0));
-            figure[rightLowerArmId] = createNode(m, rightLowerArm, null, null);
+            figure[rightLowerArmId] = createNode(m, rightLowerArm, null, rightHandId); // child: hand
             break;
+    
 
         case leftLowerLegId:
             m = translate(0.0, upperLegHeight, 0.0);
@@ -281,6 +294,20 @@ function initNodes(Id) {
             m = translate(0.0, upperLegHeight, 0.0);
             m = mult(m, rotate(theta[rightLowerLegId], 1, 0, 0));
             figure[rightLowerLegId] = createNode(m, rightLowerLeg, null, null);
+            break;
+
+        case leftHandId:
+            // Attach at the end of the forearm, rotate around Z so positive angle bends inward
+            m = translate(0.0, lowerArmHeight, 0.0);
+            m = mult(m, rotate(-theta[leftHandId], 0, 0, 1));  // -θ for inward on the left
+            figure[leftHandId] = createNode(m, leftHand, null, null);
+            break;
+
+        case rightHandId:
+            // Attach at the end of the forearm, rotate around Z so positive angle bends inward
+            m = translate(0.0, lowerArmHeight, 0.0);
+            m = mult(m, rotate(theta[rightHandId], 0, 0, 1)); // +θ for inward on the right
+            figure[rightHandId] = createNode(m, rightHand, null, null);
             break;
     }
 }
@@ -445,16 +472,20 @@ function renderOutline(limbId) {
 function nodeIdToColor(nodeId) {
     // Map node IDs to colors (R, G, B)
     var colorMap = {
-        [torsoId]: vec4(1.0, 0.0, 0.0, 1.0),      // Red
-        [headId]: vec4(0.0, 1.0, 0.0, 1.0),       // Green
-        [leftUpperArmId]: vec4(0.0, 0.0, 1.0, 1.0),    // Blue
-        [leftLowerArmId]: vec4(1.0, 1.0, 0.0, 1.0),    // Yellow
-        [rightUpperArmId]: vec4(1.0, 0.0, 1.0, 1.0),  // Magenta
-        [rightLowerArmId]: vec4(0.0, 1.0, 1.0, 1.0),  // Cyan
-        [leftUpperLegId]: vec4(0.5, 0.0, 0.0, 1.0),   // Dark Red
-        [leftLowerLegId]: vec4(0.0, 0.5, 0.0, 1.0),   // Dark Green
-        [rightUpperLegId]: vec4(0.0, 0.0, 0.5, 1.0),  // Dark Blue
-        [rightLowerLegId]: vec4(0.5, 0.5, 0.0, 1.0)   // Dark Yellow
+        [torsoId]:         vec4(1.0, 0.0, 0.0, 1.0),      // Red
+        [headId]:          vec4(0.0, 1.0, 0.0, 1.0),      // Green
+        [leftUpperArmId]:  vec4(0.0, 0.0, 1.0, 1.0),      // Blue
+        [leftLowerArmId]:  vec4(1.0, 1.0, 0.0, 1.0),      // Yellow
+        [rightUpperArmId]: vec4(1.0, 0.0, 1.0, 1.0),      // Magenta
+        [rightLowerArmId]: vec4(0.0, 1.0, 1.0, 1.0),      // Cyan
+        [leftUpperLegId]:  vec4(0.5, 0.0, 0.0, 1.0),      // Dark Red
+        [leftLowerLegId]:  vec4(0.0, 0.5, 0.0, 1.0),      // Dark Green
+        [rightUpperLegId]: vec4(0.0, 0.0, 0.5, 1.0),      // Dark Blue
+        [rightLowerLegId]: vec4(0.5, 0.5, 0.0, 1.0),      // Dark Yellow
+
+        // NEW: hands
+        [leftHandId]:      vec4(1.0, 0.5, 0.0, 1.0),      // Orange
+        [rightHandId]:     vec4(0.5, 0.0, 0.5, 1.0)       // Purple
     };
     return colorMap[nodeId] || vec4(0.5, 0.5, 0.5, 1.0);
 }
@@ -474,7 +505,11 @@ function colorToNodeId(r, g, b) {
         { r: 0.5, g: 0.0, b: 0.0, id: leftUpperLegId },
         { r: 0.0, g: 0.5, b: 0.0, id: leftLowerLegId },
         { r: 0.0, g: 0.0, b: 0.5, id: rightUpperLegId },
-        { r: 0.5, g: 0.5, b: 0.0, id: rightLowerLegId }
+        { r: 0.5, g: 0.5, b: 0.0, id: rightLowerLegId },
+
+        // NEW: hands
+        { r: 1.0, g: 0.5, b: 0.0, id: leftHandId },
+        { r: 0.5, g: 0.0, b: 0.5, id: rightHandId }
     ];
     
     // Find closest match
@@ -767,6 +802,36 @@ rightLowerLeg.renderWireframe = function() {
     renderCubeWireframe();
 }
 
+function leftHand() {
+    instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * handHeight, 0.0));
+    instanceMatrix = mult(instanceMatrix, scale4(handWidth, handHeight, handWidth));
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(instanceMatrix));
+    for (var i = 0; i < 6; i++) {
+        gl.drawArrays(gl.TRIANGLE_FAN, 4 * i, 4);
+    }
+}
+leftHand.renderWireframe = function() {
+    instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * handHeight, 0.0));
+    instanceMatrix = mult(instanceMatrix, scale4(handWidth, handHeight, handWidth));
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(instanceMatrix));
+    renderCubeWireframe();
+};
+
+function rightHand() {
+    instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * handHeight, 0.0));
+    instanceMatrix = mult(instanceMatrix, scale4(handWidth, handHeight, handWidth));
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(instanceMatrix));
+    for (var i = 0; i < 6; i++) {
+        gl.drawArrays(gl.TRIANGLE_FAN, 4 * i, 4);
+    }
+}
+rightHand.renderWireframe = function() {
+    instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * handHeight, 0.0));
+    instanceMatrix = mult(instanceMatrix, scale4(handWidth, handHeight, handWidth));
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(instanceMatrix));
+    renderCubeWireframe();
+};
+
 // Create quad face of cube (4 vertices for TRIANGLE_FAN)
 function quad(a, b, c, d) {
     var color = vertexColors[a];
@@ -951,6 +1016,20 @@ window.onload = function init() {
         initNodes(rightUpperLegId);
     };
 
+    document.getElementById("slider15").oninput = function (event) {
+        var value = parseFloat(event.target.value);
+        theta[leftHandId] = constrainAngle(leftHandId, value);
+        event.target.value = theta[leftHandId];
+        initNodes(leftHandId);
+    };
+
+    document.getElementById("slider16").oninput = function (event) {
+        var value = parseFloat(event.target.value);
+        theta[rightHandId] = constrainAngle(rightHandId, value);
+        event.target.value = theta[rightHandId];
+        initNodes(rightHandId);
+    };
+
     // Apply constraints to initial values
     for (var i = 0; i < numAngles; i++) {
         theta[i] = constrainAngle(i, theta[i]);
@@ -972,6 +1051,8 @@ window.onload = function init() {
     document.getElementById("slider12").value = theta[rightUpperArmSideId];
     document.getElementById("slider13").value = theta[leftUpperLegSideId];
     document.getElementById("slider14").value = theta[rightUpperLegSideId];
+    document.getElementById("slider15").value = theta[leftHandId];
+    document.getElementById("slider16").value = theta[rightHandId];
 
     // Initialize all nodes
     for (var j = 0; j < numNodes; j++) {
@@ -1088,7 +1169,9 @@ window.onload = function init() {
             [leftUpperArmSideId]: "slider11",
             [rightUpperArmSideId]: "slider12",
             [leftUpperLegSideId]: "slider13",
-            [rightUpperLegSideId]: "slider14"
+            [rightUpperLegSideId]: "slider14",
+            [leftHandId]: "slider15",
+            [rightHandId]: "slider16"
         };
         
         var sliderId = sliderMap[angleId];
