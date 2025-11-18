@@ -1,0 +1,117 @@
+{
+  "version": "2.0",
+  "frameRate": 120,
+  "maxFrame": 600,
+  "duration": 5,
+  "numJoints": 17,
+  "keyframesByBodyPart": {
+    "torso": [
+      { "frame": 0, "angles": [20.000000000000007] },
+      { "frame": 52, "angles": [0] },
+      { "frame": 160, "angles": [0] },
+      { "frame": 228, "angles": [-7.999999999999999] },
+      { "frame": 288, "angles": [-13.599999999999998] },
+      { "frame": 472, "angles": [20.000000000000007] },
+      { "frame": 600, "angles": [20.000000000000007] }
+    ],
+    "head": [
+      { "frame": 0, "angles": [3.2, -21.599999999999998] },
+      { "frame": 52, "angles": [0.7999999999999972, -25.60000000000001] },
+      { "frame": 160, "angles": [22.400000000000013, -23.20000000000001] },
+      { "frame": 228, "angles": [-10.399999999999999, -23.20000000000001] },
+      { "frame": 288, "angles": [-30.400000000000016, -26.40000000000001] },
+      { "frame": 472, "angles": [3.2, -21.599999999999998] },
+      { "frame": 600, "angles": [3.2, -21.599999999999998] }
+    ],
+    "left_arm_high": [
+      { "frame": 0, "angles": [0, 0] },
+      { "frame": 52, "angles": [0, 0] },
+      { "frame": 160, "angles": [-20.800000000000008, 32.80000000000001] },
+      { "frame": 228, "angles": [0, 0] },
+      { "frame": 288, "angles": [0, 0] },
+      { "frame": 472, "angles": [0, 0] },
+      { "frame": 600, "angles": [0, 0] }
+    ],
+    "left_arm_low": [
+      { "frame": 0, "angles": [0] },
+      { "frame": 52, "angles": [0] },
+      { "frame": 160, "angles": [0] },
+      { "frame": 228, "angles": [0] },
+      { "frame": 288, "angles": [0] },
+      { "frame": 472, "angles": [0] },
+      { "frame": 600, "angles": [0] }
+    ],
+    "right_arm_high": [
+      { "frame": 0, "angles": [-75.60000000000005, 8.800000000000006] },
+      { "frame": 52, "angles": [-75.60000000000005, 8.800000000000006] },
+      { "frame": 160, "angles": [-57.200000000000195, 51.999999999999936] },
+      { "frame": 228, "angles": [-75.60000000000005, 8.800000000000006] },
+      { "frame": 288, "angles": [-75.60000000000005, 8.800000000000006] },
+      { "frame": 472, "angles": [-75.60000000000005, 8.800000000000006] },
+      { "frame": 600, "angles": [-75.60000000000005, 8.800000000000006] }
+    ],
+    "right_arm_low": [
+      { "frame": 0, "angles": [0] },
+      { "frame": 52, "angles": [0] },
+      { "frame": 160, "angles": [0] },
+      { "frame": 228, "angles": [0] },
+      { "frame": 288, "angles": [0] },
+      { "frame": 472, "angles": [0] },
+      { "frame": 600, "angles": [0] }
+    ],
+    "left_leg_high": [
+      { "frame": 0, "angles": [0, 0] },
+      { "frame": 52, "angles": [0, 0] },
+      { "frame": 160, "angles": [0, 0] },
+      { "frame": 228, "angles": [0, 0] },
+      { "frame": 288, "angles": [0, 0] },
+      { "frame": 472, "angles": [0, 0] },
+      { "frame": 600, "angles": [0, 0] }
+    ],
+    "left_leg_low": [
+      { "frame": 0, "angles": [0] },
+      { "frame": 52, "angles": [0] },
+      { "frame": 160, "angles": [0] },
+      { "frame": 228, "angles": [0] },
+      { "frame": 288, "angles": [0] },
+      { "frame": 472, "angles": [0] },
+      { "frame": 600, "angles": [0] }
+    ],
+    "right_leg_high": [
+      { "frame": 0, "angles": [0, 0] },
+      { "frame": 52, "angles": [25.600000000000012, 0.8] },
+      { "frame": 160, "angles": [44.79999999999997, 0.8] },
+      { "frame": 228, "angles": [-27.200000000000067, 4] },
+      { "frame": 288, "angles": [-43.4, -13.999999999999991] },
+      { "frame": 472, "angles": [0, 0] },
+      { "frame": 600, "angles": [0, 0] }
+    ],
+    "right_leg_low": [
+      { "frame": 0, "angles": [0] },
+      { "frame": 52, "angles": [0] },
+      { "frame": 160, "angles": [28.800000000000015] },
+      { "frame": 228, "angles": [0] },
+      { "frame": 288, "angles": [0] },
+      { "frame": 472, "angles": [0] },
+      { "frame": 600, "angles": [0] }
+    ],
+    "left_hand": [
+      { "frame": 0, "angles": [0] },
+      { "frame": 52, "angles": [0] },
+      { "frame": 160, "angles": [0] },
+      { "frame": 228, "angles": [0] },
+      { "frame": 288, "angles": [0] },
+      { "frame": 472, "angles": [0] },
+      { "frame": 600, "angles": [0] }
+    ],
+    "right_hand": [
+      { "frame": 0, "angles": [0] },
+      { "frame": 52, "angles": [0] },
+      { "frame": 160, "angles": [0] },
+      { "frame": 228, "angles": [0] },
+      { "frame": 288, "angles": [0] },
+      { "frame": 472, "angles": [0] },
+      { "frame": 600, "angles": [0] }
+    ]
+  }
+}
