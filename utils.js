@@ -101,5 +101,15 @@ const loadModel = async (files) => {
 		});
 	}
 
-	return meshes;
+	const readNode = (node) => {
+		const n = {
+			name: node.name,
+			meshes: node.meshes.map((i) => meshes[i]),
+			transformation: mat4(node.transformation),
+			children: node.children?.map(readNode)
+		}
+		return n;
+	}
+
+	return readNode(resultJson.rootnode)
 }

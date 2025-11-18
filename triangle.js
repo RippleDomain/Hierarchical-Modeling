@@ -1,7 +1,7 @@
 /** @type {WebGLRenderingContext} */
 let gl;
 let program;
-let meshes;
+let rootNode;
 let uMVPMatrix;
 let projectionMatrix;
 
@@ -9,7 +9,7 @@ let projectionMatrix;
 let cameraRadius = 2;
 let cameraTheta = 0; // horizontal angle
 let cameraPhi = Math.PI / 2; // vertical angle 0 is top PI is bottom
-let lookAtPoint = [0, 0, 0];
+let lookAtPoint = [0, 1, 0];
 
 let isDragging = false;
 let lastMouseX = 0;
@@ -33,7 +33,19 @@ function updateCamera() {
     let MVPMatrix = mult(projectionMatrix, lookAtMatrix);
     gl.uniformMatrix4fv(uMVPMatrix, false, flatten(MVPMatrix));
     
-    if (meshes) {
+    if (rootNode) {
+        const meshes = [];
+        const calculateTransformation = (node, transformation) => {
+            const t = mult(transformation, node.transformation);
+            node.meshes.forEach((mesh) => {
+                meshes.push({
+                t,
+                ...mesh
+                })
+            });
+            node.children?.forEach((n) => calculateTransformation(n,t))
+        }
+        calculateTransformation(rootNode, mat4());
         renderMeshes(meshes);
     }
 }
@@ -130,8 +142,8 @@ window.onload = function init() {
 
     loadModel([
         'robotModel/robofella.glb',
-    ]).then(loadedMeshes => {
-        meshes = loadedMeshes;
+    ]).then(root => {
+        rootNode = root;
         updateCamera();
     });
 };
@@ -144,6 +156,7 @@ function renderMeshes(meshes) {
     let aNormal = gl.getAttribLocation(program, "aNormal");
     let aTexCoord = gl.getAttribLocation(program, "aTexCoord");
     let uSampler = gl.getUniformLocation(program, "uSampler");
+    let model = gl.getUniformLocation(program, 'model');
     let bufferId = gl.createBuffer();
     let texCoordBuffer = gl.createBuffer();
     let normalBuffer = gl.createBuffer();
@@ -153,6 +166,8 @@ function renderMeshes(meshes) {
         gl.bindBuffer(gl.ARRAY_BUFFER, bufferId);
         gl.bufferData(gl.ARRAY_BUFFER, mesh.vertices, gl.STATIC_DRAW);
         gl.vertexAttribPointer(vPosition, 3, gl.FLOAT, false, 0, 0);
+
+        gl.uniformMatrix4fv(model, false, flatten(mesh.t));
 
         gl.enableVertexAttribArray(aNormal);
         gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
