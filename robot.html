@@ -51,7 +51,6 @@
     .file-btn:hover { background:#323232; }
   </style>
 
-  <!-- Picking shaders (solid color by limb) -->
 <script id="pick-vertex" type="x-shader/x-vertex">
     attribute vec3 vPosition;
     uniform mat4 uMVPMatrix;
@@ -67,7 +66,6 @@
     void main() { gl_FragColor = vec4(uPickColor, 1.0); }
     </script>
     
-    <!-- Outline shaders (constant yellow, drawn as backfaces slightly scaled) -->
     <script id="outline-vertex" type="x-shader/x-vertex">
     attribute vec3 vPosition;
     uniform mat4 uMVPMatrix;
@@ -82,75 +80,61 @@
     void main() { gl_FragColor = vec4(1.0, 1.0, 0.0, 1.0); } /* yellow */
     </script>
 
-  <!-- Shaders (keeps triangle.js lighting idea: textured Phong) -->
   <script id="vertex-shader" type="x-shader/x-vertex">
-    attribute vec3 vPosition;
-    attribute vec3 aNormal;
-    attribute vec2 aTexCoord;
-    
-    uniform mat4 uMVPMatrix;
-    uniform mat4 model;
-    
-    varying vec3 vFragPos;
-    varying vec3 vNormal;
-    varying vec2 vTex;
-    
-    void main() {
-        vec4 worldPos = model * vec4(vPosition, 1.0);
-        gl_Position = uMVPMatrix * worldPos;
-    
-        // OK for rigid/uniform-scale transforms
-        mat3 normalMat = mat3(model);
-        vNormal = normalize(normalMat * aNormal);
-    
-        vFragPos = worldPos.xyz;
-        vTex = aTexCoord;
-    }
+      uniform mat4 uMVPMatrix;
+      uniform mat4 model;
+      attribute vec4 vPosition;
+      attribute vec3 aNormal;
+      attribute vec2 aTexCoord;
+      varying vec2 vTexCoord;
+      varying vec3 vNormal;
+      varying vec4 vPos;
+      void main(){
+        vPos = model * vPosition;
+        gl_Position = uMVPMatrix * vPos;
+        vTexCoord = aTexCoord;
+        vNormal = mat3(model) * aNormal;
+      }
     </script>
-    
+    <script id="fragment-shader" type="x-shader/x-fragment">
+      precision mediump float;
+      varying vec2 vTexCoord;
+      varying vec4 vPos;
+      varying vec3 vNormal;
+      uniform sampler2D uSampler;
+      uniform vec3 uLightPosition;
+      uniform vec3 uViewPosition;
 
-  <script id="fragment-shader" type="x-shader/x-fragment">
-  precision mediump float;
+      void main(void) {
+        vec3 norm = normalize(vNormal);
+        vec3 lightDir = normalize(uLightPosition - vPos.xyz);
+        
+        vec3 ambient = vec3(0.2);
+        
+        float diff = 0.75 * max(dot(norm, lightDir), 0.0);
+        
+        vec3 viewDir = normalize(uViewPosition - vPos.xyz);
+        vec3 reflectDir = reflect(-lightDir, norm);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
+        float specular = 0.35 * spec;
 
-  varying vec3 vFragPos;
-  varying vec3 vNormal;
-  varying vec2 vTex;
+        vec3 lighting = ambient + diff + specular;
+        
+        gl_FragColor = vec4(lighting * vec3(1,1,1), 1.0) * texture2D(uSampler, vTexCoord);
+      }
+    </script>
 
-  uniform vec3 uLightPosition;
-  uniform vec3 uViewPosition;
-  uniform sampler2D uSampler;
-
-  void main() {
-      vec3 albedo = texture2D(uSampler, vTex).rgb;
-
-      vec3 N = normalize(vNormal);
-      vec3 L = normalize(uLightPosition - vFragPos);
-      vec3 V = normalize(uViewPosition - vFragPos);
-      vec3 H = normalize(L + V);
-
-      float diff = max(dot(N, L), 0.0);
-      float spec = pow(max(dot(N, H), 0.0), 32.0);
-
-      vec3 ambient  = 0.20 * albedo;
-      vec3 diffuse  = 0.75 * diff * albedo;
-      vec3 specular = 0.35 * spec * vec3(1.0);
-
-      gl_FragColor = vec4(ambient + diffuse + specular, 1.0);
-  }
-  </script>
-
-  <!-- Common utils you already have -->
   <script src="Common/webgl-utils.js"></script>
   <script src="Common/initShaders.js"></script>
   <script src="Common/MV.js"></script>
 
-  <!-- AssimpJS (ensure the path points to your copy) -->
-  <!-- Example: <script src="assimpjs/assimpjs.js"></script> -->
   <script src="assimp/assimpjs.js"></script>
 
-  <!-- Loader + Main -->
-  <script src="glb-loader.js"></script>
+  <script src="utils.js"></script>
   <script src="animation.js"></script>
+  <script src="robotPose.js"></script>
+  <script src="picking.js"></script>
+  <script src="ui.js"></script>
   <script src="robot.js"></script>
 </head>
 <body>

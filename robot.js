@@ -1,809 +1,202 @@
-// robot.js
-"use strict";
-
-/** ========== GL / Program Handles ========== */
-let gl, program;
-
-/** Main shader uniforms */
-let uMVPMatrix, uLightPosition, uViewPosition, uModel;
-
-/** Extra programs for picking & outline */
-let pickProgram, outlineProgram;
-let pick_uMVP, pick_uModel, pick_uColor;
-let outline_uMVP, outline_uModel;
-
-/** Projection / Camera (triangle.js style) */
+/** @type {WebGLRenderingContext} */
+let gl;
+let program;
+let rootNode;
+let uMVPMatrix;
 let projectionMatrix;
-let cameraRadius = 2.0;
-let cameraTheta  = 0.0;
-let cameraPhi    = Math.PI / 2;
-let lookAtPoint  = [0, 1, 0];
+let uViewPosition;
 
-const drag = { active:false, lastX:0, lastY:0 };
-const limbDrag = { active:false, lastX:0, lastY:0 };
-const limbDragSensitivity = 0.8; // deg per pixel
+// camera in spherical coordinates
+let cameraRadius = 2;
+let cameraTheta = 0; // horizontal angle
+let cameraPhi = Math.PI / 2; // vertical angle 0 is top PI is bottom
+let lookAtPoint = [0, 1, 0];
 
-/** Scene graph root */
-let rootNode = null;
+let isDragging = false;
+let lastMouseX = 0;
+let lastMouseY = 0;
 
-/** ========== Hierarchy / Angles & Constraints ========== */
-const torsoId=0, head1Id=1, leftUpperArmId=2, leftLowerArmId=3, rightUpperArmId=4, rightLowerArmId=5,
-      leftUpperLegId=6, leftLowerLegId=7, rightUpperLegId=8, rightLowerLegId=9, head2Id=10,
-      leftUpperArmSideId=11, rightUpperArmSideId=12, leftUpperLegSideId=13, rightUpperLegSideId=14,
-      leftHandId=15, rightHandId=16;
-
-const numAngles = 17;
-const theta = new Array(numAngles).fill(0);
-
-/** ========== Animation System ========== */
-let animSystem = null;
-let isAnimating = false; // Whether animation is controlling the robot
-let lastAnimTime = 0;
-
-/* Constraints copied from your placeholder rig */
-const jointConstraints = {
-  [torsoId]: [-180, 180],
-  [head1Id]: [-45, 45],  [head2Id]: [-80, 80],
-  [leftUpperArmId]: [-180, 0],   [rightUpperArmId]: [-90, 90],
-  [leftLowerArmId]: [-135, 0],   [rightLowerArmId]: [-135, 0],
-  [leftUpperLegId]: [-45, 75],   [rightUpperLegId]: [-45, 75],
-  [leftLowerLegId]: [0, 135],    [rightLowerLegId]: [0, 135],
-  [leftUpperArmSideId]: [0,110], [rightUpperArmSideId]: [-110,90],
-  [leftUpperLegSideId]: [-30,30],[rightUpperLegSideId]: [-30,30],
-  [leftHandId]: [-45,45],          [rightHandId]: [-45,45]
-};
-function clampJoint(id, val){
-  const lim = jointConstraints[id];
-  return lim ? Math.max(lim[0], Math.min(lim[1], val)) : val;
-}
-
-/** Node names from your GLB */
-const NAME = {
-  torso: "torso",
-  head: "head",
-  lArmHi: "left_arm_high",
-  lArmLo: "left_arm_low",
-  rArmHi: "right_arm_high",
-  rArmLo: "right_arm_low",
-  lLegHi: "left_leg_high",
-  lLegLo: "left_leg_low",
-  rLegHi: "right_leg_high",
-  rLegLo: "right_leg_low",
-  lHand: "left_hand",
-  rHand: "right_hand"
-};
-
-/** Selected node name for outline & dragging */
-let selectedNodeName = null;
-
-/** Which angle IDs a node controls (primary via horizontal drag, secondary via vertical drag) */
-const nodeToAngleMapByName = {
-  [NAME.torso]:   { primary: torsoId,         secondary: null },
-  [NAME.head]:    { primary: head1Id,         secondary: head2Id },
-  [NAME.lArmHi]:  { primary: leftUpperArmId,  secondary: leftUpperArmSideId },
-  [NAME.lArmLo]:  { primary: leftLowerArmId,  secondary: null },
-  [NAME.rArmHi]:  { primary: rightUpperArmId, secondary: rightUpperArmSideId },
-  [NAME.rArmLo]:  { primary: rightLowerArmId, secondary: null },
-  [NAME.lLegHi]:  { primary: leftUpperLegId,  secondary: leftUpperLegSideId },
-  [NAME.lLegLo]:  { primary: leftLowerLegId,  secondary: null },
-  [NAME.rLegHi]:  { primary: rightUpperLegId, secondary: rightUpperLegSideId },
-  [NAME.rLegLo]:  { primary: rightLowerLegId, secondary: null },
-  [NAME.lHand]:   { primary: leftHandId,      secondary: null },
-  [NAME.rHand]:   { primary: rightHandId,     secondary: null }
-};
-
-/** ========== Pose Construction (apply AFTER node's native transform) ========== */
-const RX = (deg)=> rotate(deg, 1,0,0);
-const RY = (deg)=> rotate(deg, 0,1,0);
-const RZ = (deg)=> rotate(deg, 0,0,1);
-
-function buildPoseTransforms(){
-  const pose = {};
-  // Torso twist (yaw)
-  pose[NAME.torso] = RY(theta[torsoId]);
-  // Head: pitch then yaw
-  pose[NAME.head] = mult(RX(theta[head1Id]), RY(theta[head2Id]));
-  // Shoulders: side (Z) then pitch (X)
-  pose[NAME.lArmHi] = mult(RZ(theta[leftUpperArmSideId]), RX(theta[leftUpperArmId]));
-  pose[NAME.rArmHi] = mult(RZ(theta[rightUpperArmSideId]), RX(-theta[rightUpperArmId]));
-  // Elbows
-  pose[NAME.lArmLo] = RX(theta[leftLowerArmId]);
-  pose[NAME.rArmLo] = RX(theta[rightLowerArmId]);
-  // Hips
-  pose[NAME.lLegHi] = mult(RZ(theta[leftUpperLegSideId]), RX(theta[leftUpperLegId]));
-  pose[NAME.rLegHi] = mult(RZ(theta[rightUpperLegSideId]), RX(theta[rightUpperLegId]));
-  // Knees
-  pose[NAME.lLegLo] = RX(theta[leftLowerLegId]);
-  pose[NAME.rLegLo] = RX(theta[rightLowerLegId]);
-  // Hands (positive = inward for both) — fixed sign for right hand
-  pose[NAME.lHand] = RZ(-theta[leftHandId]);
-  pose[NAME.rHand] = RX(theta[rightHandId]);
-
-  return pose;
-}
-
-/** ========== Utility ========== */
-function sphericalToCartesian(radius, theta, phi){
-  const x = radius * Math.sin(phi) * Math.cos(theta);
-  const y = radius * Math.cos(phi);
-  const z = radius * Math.sin(phi) * Math.sin(theta);
-  return [x,y,z];
-}
-function sphericalToEye(){
-  const c = sphericalToCartesian(cameraRadius, cameraTheta, cameraPhi);
-  return [ c[0]+lookAtPoint[0], c[1]+lookAtPoint[1], c[2]+lookAtPoint[2] ];
-}
-function scaleUniform(s){
-  const S = mat4();
-  S[0][0]=s; S[1][1]=s; S[2][2]=s;
-  return S;
-}
-
-/** Walk scene with current pose and call cb(node, worldT) */
-function traverseWithPose(node, parentT, pose, cb){
-  let t = mult(parentT, node.transformation);
-  if (pose[node.name]) t = mult(t, pose[node.name]);
-  cb(node, t);
-  for (const c of (node.children || [])) traverseWithPose(c, t, pose, cb);
-}
-function findNodeAndT(root, pose, targetName){
-  let out = null;
-  traverseWithPose(root, mat4(), pose, (node, t) => {
-    if (!out && node.name === targetName) out = { node, t };
-  });
-  return out;
-}
-
-/** ========== Main (lit+textured) Rendering ========== */
-function renderMeshes(items){
-  const aPos = gl.getAttribLocation(program, "vPosition");
-  const aNrm = gl.getAttribLocation(program, "aNormal");
-  const aUV  = gl.getAttribLocation(program, "aTexCoord");
-  const uSamp = gl.getUniformLocation(program, "uSampler");
-  uModel = gl.getUniformLocation(program, "model");
-
-  gl.activeTexture(gl.TEXTURE0);
-  gl.uniform1i(uSamp, 0);
-
-  for (const {t, m} of items){
-    gl.bindBuffer(gl.ARRAY_BUFFER, m.vbo);
-    gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(aPos);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, m.nbo);
-    gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(aNrm);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, m.tbo);
-    gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(aUV);
-
-    gl.uniformMatrix4fv(uModel, false, flatten(t));
-
-    if (m.texture) gl.bindTexture(gl.TEXTURE_2D, m.texture);
-
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.ibo);
-    gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_SHORT, 0);
-  }
-}
-
-/** Draw the whole scene with current camera & pose */
-function updateCameraAndDraw(){
-  if (!gl || !program) return;
-
-  // Update animation if playing
-  if (animSystem && animSystem.isPlaying) {
-    const now = performance.now() / 1000;
-    if (lastAnimTime > 0) {
-      const deltaTime = now - lastAnimTime;
-      animSystem.update(deltaTime);
-      
-      // Apply interpolated angles (use current theta as defaults for parts without keyframes)
-      const animAngles = animSystem.getCurrentAngles(theta.slice());
-      for (let i = 0; i < numAngles; i++) {
-        theta[i] = animAngles[i];
-      }
-      
-      // Update UI sliders and labels
-      updateSlidersFromTheta();
-      updateAnimationUI();
+function updateCamera() {
+    let cameraCoords = sphericalToCartesian(cameraRadius, cameraTheta, cameraPhi);
+    
+    let absoluteCameraPos = [
+        cameraCoords[0] + lookAtPoint[0],
+        cameraCoords[1] + lookAtPoint[1],
+        cameraCoords[2] + lookAtPoint[2]
+    ];
+    
+    let lookAtMatrix = lookAt(
+        absoluteCameraPos,
+        lookAtPoint,
+        [0, 1, 0]
+    );
+    
+    let MVPMatrix = mult(projectionMatrix, lookAtMatrix);
+    gl.uniformMatrix4fv(uMVPMatrix, false, flatten(MVPMatrix));
+    
+    // Update view position for specular lighting
+    if (uViewPosition) {
+        gl.uniform3fv(uViewPosition, absoluteCameraPos);
     }
-    lastAnimTime = now;
-  } else {
-    lastAnimTime = 0;
-  }
-
-  const eye = sphericalToEye();
-  const V = lookAt(eye, lookAtPoint, [0,1,0]);
-  const MVP = mult(projectionMatrix, V);
-
-  gl.useProgram(program);
-  gl.uniformMatrix4fv(uMVPMatrix, false, flatten(MVP));
-  gl.uniform3fv(uViewPosition, eye);
-  gl.uniform3f(uLightPosition, 0, 2, 50);
-
-  gl.viewport(0,0, gl.canvas.width, gl.canvas.height);
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  gl.enable(gl.DEPTH_TEST);
-
-  if (!rootNode) return;
-
-  const pose = buildPoseTransforms();
-
-  // collect and draw
-  const items = [];
-  traverseWithPose(rootNode, mat4(), pose, (node, t) => {
-    for (const m of node.meshes) items.push({ t, m });
-  });
-  renderMeshes(items);
-
-  // outline on selection
-  drawSelectedOutline();
-}
-
-/** ========== Picking (hidden color pass) ========== */
-const pickables = [
-  NAME.torso, NAME.head,
-  NAME.lArmHi, NAME.lArmLo, NAME.rArmHi, NAME.rArmLo,
-  NAME.lLegHi, NAME.lLegLo, NAME.rLegHi, NAME.rLegLo,
-  NAME.lHand, NAME.rHand
-];
-const nameToPickColor = new Map();
-const pickColorToName = new Map();
-(function initPickColors(){
-  for (let i = 0; i < pickables.length; i++){
-    const id = i + 1;
-    const r = ((id     ) & 255) / 255.0;
-    const g = ((id >> 8) & 255) / 255.0;
-    const b = ((id >>16) & 255) / 255.0;
-    nameToPickColor.set(pickables[i], [r,g,b]);
-    pickColorToName.set(`${Math.round(r*255)}_${Math.round(g*255)}_${Math.round(b*255)}`, pickables[i]);
-  }
-})();
-
-function createPickFBO(width, height){
-  const fb = gl.createFramebuffer();
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-
-  const tex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-
-  const rb = gl.createRenderbuffer();
-  gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
-  gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
-
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb);
-
-  const ok = (gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE);
-
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  return ok ? { fb, tex, rb, w:width, h:height } : null;
-}
-
-function renderPickingScene(fbo){
-  const eye = sphericalToEye();
-  const V = lookAt(eye, lookAtPoint, [0,1,0]);
-  const MVP = mult(projectionMatrix, V);
-  const pose = buildPoseTransforms();
-
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.fb);
-  gl.viewport(0, 0, fbo.w, fbo.h);
-  gl.clearColor(0,0,0,0);
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  gl.enable(gl.DEPTH_TEST);
-
-  gl.useProgram(pickProgram);
-  gl.uniformMatrix4fv(pick_uMVP, false, flatten(MVP));
-
-  traverseWithPose(rootNode, mat4(), pose, (node, t) => {
-    if (!nameToPickColor.has(node.name)) return;
-
-    gl.uniform3fv(pick_uColor, new Float32Array(nameToPickColor.get(node.name)));
-    gl.uniformMatrix4fv(pick_uModel, false, flatten(t));
-
-    for (const m of node.meshes){
-      const aPos = gl.getAttribLocation(pickProgram, "vPosition");
-      gl.bindBuffer(gl.ARRAY_BUFFER, m.vbo);
-      gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
-      gl.enableVertexAttribArray(aPos);
-
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.ibo);
-      gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_SHORT, 0);
+    
+    if (rootNode) {
+        const meshes = [];
+        const calculateTransformation = (node, transformation) => {
+            const t = mult(transformation, node.transformation);
+            node.meshes.forEach((mesh) => {
+                meshes.push({
+                t,
+                ...mesh
+                })
+            });
+            node.children?.forEach((n) => calculateTransformation(n,t))
+        }
+        calculateTransformation(rootNode, mat4());
+        renderMeshes(meshes);
     }
-  });
-
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
 
-function pickAtClientPos(clientX, clientY){
-  const rect = gl.canvas.getBoundingClientRect();
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-  const x = Math.floor((clientX - rect.left) * dpr);
-  const y = Math.floor((clientY - rect.top)  * dpr);
-  if (x < 0 || y < 0 || x >= gl.canvas.width || y >= gl.canvas.height) return null;
-
-  const fbo = createPickFBO(gl.canvas.width, gl.canvas.height);
-  if (!fbo) return null;
-
-  renderPickingScene(fbo);
-
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.fb);
-  const px = new Uint8Array(4);
-  gl.readPixels(x, fbo.h - y - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-
-  // cleanup
-  gl.deleteFramebuffer(fbo.fb);
-  gl.deleteTexture(fbo.tex);
-  gl.deleteRenderbuffer(fbo.rb);
-
-  const key = `${px[0]}_${px[1]}_${px[2]}`;
-  return pickColorToName.get(key) || null;
-}
-
-/** ========== Outline of selected node (yellow) ========== */
-function drawSelectedOutline(){
-  if (!selectedNodeName) return;
-  const eye = sphericalToEye();
-  const V = lookAt(eye, lookAtPoint, [0,1,0]);
-  const MVP = mult(projectionMatrix, V);
-
-  const pose = buildPoseTransforms();
-  const hit = findNodeAndT(rootNode, pose, selectedNodeName);
-  if (!hit) return;
-
-  gl.useProgram(outlineProgram);
-  gl.uniformMatrix4fv(outline_uMVP, false, flatten(MVP));
-
-  gl.enable(gl.CULL_FACE);
-  gl.cullFace(gl.FRONT);              // draw backfaces for silhouette
-  gl.depthFunc(gl.LEQUAL);
-
-  const inflated = mult(hit.t, scaleUniform(1.03));
-  gl.uniformMatrix4fv(outline_uModel, false, flatten(inflated));
-
-  for (const m of hit.node.meshes){
-    const aPos = gl.getAttribLocation(outlineProgram, "vPosition");
-    gl.bindBuffer(gl.ARRAY_BUFFER, m.vbo);
-    gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(aPos);
-
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.ibo);
-    gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_SHORT, 0);
-  }
-
-  gl.cullFace(gl.BACK);
-  gl.disable(gl.CULL_FACE);
-  gl.depthFunc(gl.LESS);
-}
-
-/** ========== UI Helpers ========== */
-function linkSlider(id, angleId){
-  const slider = document.getElementById(id);
-  const label  = document.getElementById(`v${angleId}`);
-  slider.addEventListener("input", e => {
-    theta[angleId] = clampJoint(angleId, parseFloat(e.target.value));
-    e.target.value = theta[angleId];
-    if (label) label.textContent = String(theta[angleId] | 0);
-  });
-  if (label) label.textContent = slider.value;
-}
-
-function resetPose(){
-  for (let i=0;i<numAngles;i++){
-    theta[i] = clampJoint(i, 0);
-    const sId = ({
-      0:"slider0",1:"slider1",2:"slider2",3:"slider3",4:"slider4",5:"slider5",
-      6:"slider6",7:"slider7",8:"slider8",9:"slider9",10:"slider10",11:"slider11",
-      12:"slider12",13:"slider13",14:"slider14",15:"slider15",16:"slider16"
-    })[i];
-    const s = document.getElementById(sId);
-    if (s){ s.value = theta[i]; const lab = document.getElementById(`v${i}`); if (lab) lab.textContent = "0"; }
-  }
-}
-
-/** Update slider values from theta array */
-function updateSlidersFromTheta(){
-  for (let i=0;i<numAngles;i++){
-    const sId = ({
-      0:"slider0",1:"slider1",2:"slider2",3:"slider3",4:"slider4",5:"slider5",
-      6:"slider6",7:"slider7",8:"slider8",9:"slider9",10:"slider10",11:"slider11",
-      12:"slider12",13:"slider13",14:"slider14",15:"slider15",16:"slider16"
-    })[i];
-    const s = document.getElementById(sId);
-    if (s) {
-      s.value = theta[i];
-      const lab = document.getElementById(`v${i}`);
-      if (lab) lab.textContent = String(theta[i] | 0);
+window.onload = function init() {
+    let canvas = document.getElementById("gl-canvas");
+    gl = WebGLUtils.setupWebGL(canvas);
+    if (!gl) {
+        alert("WebGL isn't available");
     }
-  }
-}
 
-/** Update animation UI elements */
-function updateAnimationUI(){
-  if (!animSystem) return;
-  
-  const frameDisplay = document.getElementById("currentFrameDisplay");
-  const maxFrameDisplay = document.getElementById("maxFrameDisplay");
-  const timeDisplay = document.getElementById("timeDisplay");
-  const timeline = document.getElementById("timeline");
-  const playPauseBtn = document.getElementById("btnPlayPause");
-  
-  if (frameDisplay) frameDisplay.textContent = animSystem.currentFrame;
-  if (maxFrameDisplay) maxFrameDisplay.textContent = animSystem.maxFrame;
-  if (timeDisplay) timeDisplay.textContent = animSystem.animationTime.toFixed(1) + "s";
-  if (timeline) {
-    timeline.max = animSystem.maxFrame;
-    timeline.value = animSystem.currentFrame;
-  }
-  if (playPauseBtn) {
-    playPauseBtn.textContent = animSystem.isPlaying ? "Pause" : "Play";
-    playPauseBtn.classList.toggle("active", animSystem.isPlaying);
-  }
-  
-  updateKeyframeList();
-}
+    projectionMatrix = perspective(45, canvas.width / canvas.height, 0.1, 100);
+    
+    // Configure WebGL   
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0.0, 0.0, 0.0, 0.0);
 
-/** Get selected body parts from UI checkboxes */
-function getSelectedBodyParts() {
-  const checkboxes = document.querySelectorAll('.body-part-checkbox:checked');
-  if (checkboxes.length === 0) {
-    // If no body parts selected, return all (null means all)
-    return null;
-  }
-  return Array.from(checkboxes).map(cb => cb.value);
-}
+    // Load shaders and initialize attribute buffers
+    program = initShaders(gl, "vertex-shader", "fragment-shader");
+    gl.useProgram(program);
 
-/** Update keyframe list display */
-function updateKeyframeList(){
-  if (!animSystem) return;
-  const listEl = document.getElementById("keyframeList");
-  if (!listEl) return;
-  
-  const keyframes = animSystem.getAllKeyframes();
-  
-  if (keyframes.length === 0) {
-    listEl.innerHTML = '<div style="color:#888; padding:4px; text-align:center;">No keyframes</div>';
-    return;
-  }
-  
-  // Group by frame
-  const byFrame = {};
-  for (const kf of keyframes) {
-    if (!byFrame[kf.frame]) {
-      byFrame[kf.frame] = [];
-    }
-    byFrame[kf.frame].push(kf.bodyPart);
-  }
-  
-  listEl.innerHTML = Object.keys(byFrame).sort((a, b) => parseInt(a) - parseInt(b)).map(frame => {
-    const time = (parseInt(frame) / animSystem.frameRate).toFixed(1);
-    const bodyParts = byFrame[frame].map(bp => {
-      // Convert internal names to display names
-      const displayNames = {
-        'torso': 'Torso',
-        'head': 'Head',
-        'left_arm_high': 'L Arm (U)',
-        'left_arm_low': 'L Arm (L)',
-        'right_arm_high': 'R Arm (U)',
-        'right_arm_low': 'R Arm (L)',
-        'left_leg_high': 'L Leg (U)',
-        'left_leg_low': 'L Leg (L)',
-        'right_leg_high': 'R Leg (U)',
-        'right_leg_low': 'R Leg (L)',
-        'left_hand': 'L Hand',
-        'right_hand': 'R Hand'
-      };
-      return displayNames[bp] || bp;
-    }).join(', ');
-    return `
-      <div class="keyframe-item">
-        <span>Frame ${frame} (${time}s): ${bodyParts}</span>
-        <button onclick="animSystem.setFrame(${frame}); updateAnimationUI();">Go to</button>
-      </div>
-    `;
-  }).join('');
-}
-function resetCamera(){
-  cameraRadius = 2.0;
-  cameraTheta  = 0.0;
-  cameraPhi    = Math.PI / 2;
-  lookAtPoint  = [0,1,0];
-}
+    // Associate out shader variables with our data buffer
+    let vPosition = gl.getAttribLocation(program, "vPosition");
+    gl.vertexAttribPointer(vPosition, 2, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(vPosition);
 
-/** Keep canvas hi-DPI and update projection */
-function fitCanvas(){
-  const canvas = gl.canvas;
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-  const rect = canvas.getBoundingClientRect();
-  const width  = Math.floor(rect.width  * dpr);
-  const height = Math.floor(rect.height * dpr);
-  if (canvas.width !== width || canvas.height !== height){
-    canvas.width = width; canvas.height = height;
-  }
-  projectionMatrix = perspective(45, width/height, 0.1, 100.0);
-}
-
-/** ========== Init & Event Wiring ========== */
-window.onload = async function(){
-  const canvas = document.getElementById("gl-canvas");
-  gl = WebGLUtils.setupWebGL(canvas);
-  if (!gl) { alert("WebGL isn't available"); return; }
-
-  program = initShaders(gl, "vertex-shader", "fragment-shader");
-  gl.useProgram(program);
-  uMVPMatrix     = gl.getUniformLocation(program, "uMVPMatrix");
-  uLightPosition = gl.getUniformLocation(program, "uLightPosition");
-  uViewPosition  = gl.getUniformLocation(program, "uViewPosition");
-
-  // Extra programs
-  pickProgram = initShaders(gl, "pick-vertex", "pick-fragment");
-  pick_uMVP   = gl.getUniformLocation(pickProgram, "uMVPMatrix");
-  pick_uModel = gl.getUniformLocation(pickProgram, "model");
-  pick_uColor = gl.getUniformLocation(pickProgram, "uPickColor");
-
-  outlineProgram = initShaders(gl, "outline-vertex", "outline-fragment");
-  outline_uMVP   = gl.getUniformLocation(outlineProgram, "uMVPMatrix");
-  outline_uModel = gl.getUniformLocation(outlineProgram, "model");
-
-  gl.clearColor(0.06,0.06,0.08,1.0);
-
-  // Sliders → theta[]
-  linkSlider("slider0", 0);
-  linkSlider("slider1", 1);
-  linkSlider("slider2", 2);
-  linkSlider("slider3", 3);
-  linkSlider("slider4", 4);
-  linkSlider("slider5", 5);
-  linkSlider("slider6", 6);
-  linkSlider("slider7", 7);
-  linkSlider("slider8", 8);
-  linkSlider("slider9", 9);
-  linkSlider("slider10",10);
-  linkSlider("slider11",11);
-  linkSlider("slider12",12);
-  linkSlider("slider13",13);
-  linkSlider("slider14",14);
-  linkSlider("slider15",15);
-  linkSlider("slider16",16);
-
-  // Reset buttons
-  const btnResetPose   = document.getElementById("btnResetPose");
-  const btnResetCamera = document.getElementById("btnResetCamera");
-  if (btnResetPose)   btnResetPose.onclick   = ()=> resetPose();
-  if (btnResetCamera) btnResetCamera.onclick = ()=> resetCamera();
-
-  // Initialize animation system with body part mapping
-  const bodyPartMap = {
-    [NAME.torso]: [torsoId],
-    [NAME.head]: [head1Id, head2Id],
-    [NAME.lArmHi]: [leftUpperArmId, leftUpperArmSideId],
-    [NAME.lArmLo]: [leftLowerArmId],
-    [NAME.rArmHi]: [rightUpperArmId, rightUpperArmSideId],
-    [NAME.rArmLo]: [rightLowerArmId],
-    [NAME.lLegHi]: [leftUpperLegId, leftUpperLegSideId],
-    [NAME.lLegLo]: [leftLowerLegId],
-    [NAME.rLegHi]: [rightUpperLegId, rightUpperLegSideId],
-    [NAME.rLegLo]: [rightLowerLegId],
-    [NAME.lHand]: [leftHandId],
-    [NAME.rHand]: [rightHandId]
-  };
-  animSystem = new AnimationSystem(numAngles, bodyPartMap);
-  updateAnimationUI();
-
-  // Animation controls
-  const btnPlayPause = document.getElementById("btnPlayPause");
-  const btnStop = document.getElementById("btnStop");
-  const btnSetKeyframe = document.getElementById("btnSetKeyframe");
-  const btnDeleteKeyframe = document.getElementById("btnDeleteKeyframe");
-  const btnSaveAnimation = document.getElementById("btnSaveAnimation");
-  const btnClearAnimation = document.getElementById("btnClearAnimation");
-  const timeline = document.getElementById("timeline");
-  const loadAnimFile = document.getElementById("loadAnimFile");
-
-  if (btnPlayPause) {
-    btnPlayPause.onclick = () => {
-      if (animSystem.isPlaying) {
-        animSystem.pause();
-      } else {
-        animSystem.play();
-        lastAnimTime = performance.now() / 1000;
-      }
-      updateAnimationUI();
-    };
-  }
-
-  if (btnStop) {
-    btnStop.onclick = () => {
-      animSystem.stop();
-      const animAngles = animSystem.getCurrentAngles(theta.slice());
-      for (let i = 0; i < numAngles; i++) {
-        theta[i] = animAngles[i];
-      }
-      updateSlidersFromTheta();
-      updateAnimationUI();
-    };
-  }
-
-  if (btnSetKeyframe) {
-    btnSetKeyframe.onclick = () => {
-      const selectedBodyParts = getSelectedBodyParts();
-      animSystem.setKeyframe(animSystem.currentFrame, theta.slice(), selectedBodyParts);
-      updateAnimationUI();
-    };
-  }
-
-  if (btnDeleteKeyframe) {
-    btnDeleteKeyframe.onclick = () => {
-      const selectedBodyParts = getSelectedBodyParts();
-      animSystem.removeKeyframe(animSystem.currentFrame, selectedBodyParts);
-      updateAnimationUI();
-    };
-  }
-
-  if (timeline) {
-    timeline.addEventListener("input", (e) => {
-      const frame = parseInt(e.target.value);
-      animSystem.setFrame(frame);
-      const animAngles = animSystem.getCurrentAngles(theta.slice());
-      for (let i = 0; i < numAngles; i++) {
-        theta[i] = animAngles[i];
-      }
-      updateSlidersFromTheta();
-      updateAnimationUI();
+    uMVPMatrix = gl.getUniformLocation(program, "uMVPMatrix");
+    let uLightPosition = gl.getUniformLocation(program, "uLightPosition");
+    gl.uniform3f(uLightPosition, 0, 2, 50);
+    
+    // Get uniform location for view position (for specular lighting)
+    uViewPosition = gl.getUniformLocation(program, "uViewPosition");
+    
+    canvas.addEventListener('mousedown', (e) => {
+        if (typeof limbDrag !== 'undefined' && limbDrag.active) return;
+        isDragging = true;
+        lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
     });
-  }
 
-  if (btnSaveAnimation) {
-    btnSaveAnimation.onclick = () => {
-      const json = animSystem.exportToJSON();
-      const blob = new Blob([JSON.stringify(json, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "robot-animation.json";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    };
-  }
-
-  if (loadAnimFile) {
-    loadAnimFile.addEventListener("change", (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          animSystem.importFromJSON(event.target.result);
-          // Update to current frame
-          const animAngles = animSystem.getCurrentAngles(theta.slice());
-          for (let i = 0; i < numAngles; i++) {
-            theta[i] = animAngles[i];
-          }
-          updateSlidersFromTheta();
-          updateAnimationUI();
-          alert("Animation loaded successfully!");
-        } catch (error) {
-          alert("Error loading animation: " + error.message);
+    canvas.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        if (typeof limbDrag !== 'undefined' && limbDrag.active) return;
+        
+        let deltaX = e.clientX - lastMouseX;
+        let deltaY = e.clientY - lastMouseY;
+        
+        if (e.shiftKey) {
+            let cameraCoords = sphericalToCartesian(cameraRadius, cameraTheta, cameraPhi);
+            
+            let forward = normalize([
+                -cameraCoords[0],
+                -cameraCoords[1],
+                -cameraCoords[2]
+            ]);
+            
+            let worldUp = [0, 1, 0];
+            let right = normalize(cross(forward, worldUp));
+            
+            let up = normalize(cross(right, forward));
+            
+            let panSpeed = cameraRadius * 0.001;
+            
+            lookAtPoint[0] += right[0] * deltaX * panSpeed;
+            lookAtPoint[1] += right[1] * deltaX * panSpeed;
+            lookAtPoint[2] += right[2] * deltaX * panSpeed;
+            
+            lookAtPoint[0] -= up[0] * deltaY * panSpeed;
+            lookAtPoint[1] -= up[1] * deltaY * panSpeed;
+            lookAtPoint[2] -= up[2] * deltaY * panSpeed;
+        } else {
+            cameraTheta -= deltaX * 0.01;
+            cameraPhi += deltaY * 0.01;
+            
+            cameraPhi = Math.max(0.1, Math.min(Math.PI - 0.1, cameraPhi));
         }
-      };
-      reader.readAsText(file);
-      e.target.value = ""; // Reset file input
+        
+        lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
+        
+        updateCamera();
     });
-  }
 
-  if (btnClearAnimation) {
-    btnClearAnimation.onclick = () => {
-      if (confirm("Clear all keyframes?")) {
-        animSystem.clearKeyframes();
-        updateAnimationUI();
-      }
-    };
-  }
+    canvas.addEventListener('mouseup', () => {
+        isDragging = false;
+    });
 
-  // Mouse input:
-  canvas.addEventListener("mousedown", (e) => {
-    // attempt limb pick first
-    const hit = pickAtClientPos(e.clientX, e.clientY);
-    if (hit){
-      selectedNodeName = hit;
-      limbDrag.active = true;
-      limbDrag.lastX = e.clientX;
-      limbDrag.lastY = e.clientY;
-      drag.active = false; // prevent camera drag
-      e.preventDefault();
-      return;
-    }
-    // otherwise start camera drag
-    drag.active = true;
-    drag.lastX = e.clientX;
-    drag.lastY = e.clientY;
-  });
+    canvas.addEventListener('mouseleave', () => {
+        isDragging = false;
+    });
 
-  canvas.addEventListener("mousemove", (e) => {
-    // limb dragging
-    if (limbDrag.active){
-      const map = nodeToAngleMapByName[selectedNodeName];
-      if (map){
-        const dx = e.clientX - limbDrag.lastX;
-        const dy = e.clientY - limbDrag.lastY;
+    canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        
+        cameraRadius += e.deltaY * 0.01;
+        cameraRadius = Math.max(0.5, Math.min(20, cameraRadius));
+        updateCamera();
+    });
 
-        if (dy !== 0){
-          theta[map.primary] = clampJoint(map.primary, theta[map.primary] + dy * limbDragSensitivity);
-          const lab = document.getElementById(`v${map.primary}`); if (lab) lab.textContent = String(theta[map.primary] | 0);
-          const sld = document.getElementById(`slider${map.primary}`); if (sld) sld.value = theta[map.primary];
-        }
-        if (map.secondary != null && dx !== 0){
-          theta[map.secondary] = clampJoint(map.secondary, theta[map.secondary] - dx * limbDragSensitivity);
-          const lab2 = document.getElementById(`v${map.secondary}`); if (lab2) lab2.textContent = String(theta[map.secondary] | 0);
-          const sld2 = document.getElementById(`slider${map.secondary}`); if (sld2) sld2.value = theta[map.secondary];
-        }
-
-        limbDrag.lastX = e.clientX;
-        limbDrag.lastY = e.clientY;
-      }
-      e.preventDefault();
-      return;
-    }
-
-    // camera orbit/pan
-    if (!drag.active) return;
-    const dx = e.clientX - drag.lastX;
-    const dy = e.clientY - drag.lastY;
-
-    if (e.shiftKey){
-      const cam = sphericalToCartesian(cameraRadius, cameraTheta, cameraPhi);
-      const fwd = normalize([-cam[0], -cam[1], -cam[2]]);
-      const right = normalize(cross(fwd, [0,1,0]));
-      const up = normalize(cross(right, fwd));
-      const pan = cameraRadius * 0.0015;
-      lookAtPoint[0] += right[0]*dx*pan - up[0]*dy*pan;
-      lookAtPoint[1] += right[1]*dx*pan - up[1]*dy*pan;
-      lookAtPoint[2] += right[2]*dx*pan - up[2]*dy*pan;
-    } else {
-      cameraTheta -= dx * 0.01;
-      cameraPhi   += dy * 0.01;
-      cameraPhi = Math.max(0.1, Math.min(Math.PI - 0.1, cameraPhi));
-    }
-
-    drag.lastX = e.clientX; drag.lastY = e.clientY;
-  });
-
-  ["mouseup","mouseleave"].forEach(evt => canvas.addEventListener(evt, () => {
-    limbDrag.active = false;
-    drag.active = false;
-  }));
-
-  canvas.addEventListener("wheel", (e) => {
-    e.preventDefault();
-    cameraRadius += e.deltaY * 0.01;
-    cameraRadius = Math.max(0.5, Math.min(20, cameraRadius));
-  }, { passive:false });
-
-  // click empty background to deselect
-  canvas.addEventListener("click", (e) => {
-    if (limbDrag.active) return; // ignore if drag just happened
-    const hit = pickAtClientPos(e.clientX, e.clientY);
-    if (!hit) selectedNodeName = null;
-  });
-
-  window.addEventListener("resize", ()=> fitCanvas());
-  fitCanvas();
-
-  // Load your GLB (adjust path if needed)
-  rootNode = await loadModel(gl, [ "robotModel/robofella.glb" ]);
-
-  // Main loop
-  (function loop(){
-    fitCanvas();
-    updateCameraAndDraw();
-    requestAnimFrame(loop);
-  })();
+    loadModel([
+        'robotModel/robofella.glb',
+    ]).then(root => {
+        rootNode = root;
+        updateCamera();
+    });
 };
+
+function renderMeshes(meshes) {
+    console.log(meshes);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
+    let vPosition = gl.getAttribLocation(program, "vPosition");
+    let aNormal = gl.getAttribLocation(program, "aNormal");
+    let aTexCoord = gl.getAttribLocation(program, "aTexCoord");
+    let uSampler = gl.getUniformLocation(program, "uSampler");
+    let model = gl.getUniformLocation(program, 'model');
+    let bufferId = gl.createBuffer();
+    let texCoordBuffer = gl.createBuffer();
+    let normalBuffer = gl.createBuffer();
+    let indexBufferId = gl.createBuffer();
+    for (let mesh of meshes) {
+        gl.enableVertexAttribArray(vPosition);
+        gl.bindBuffer(gl.ARRAY_BUFFER, bufferId);
+        gl.bufferData(gl.ARRAY_BUFFER, mesh.vertices, gl.STATIC_DRAW);
+        gl.vertexAttribPointer(vPosition, 3, gl.FLOAT, false, 0, 0);
+
+        gl.uniformMatrix4fv(model, false, flatten(mesh.t));
+
+        gl.enableVertexAttribArray(aNormal);
+        gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, mesh.normals, gl.STATIC_DRAW);
+        gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, 0, 0);
+
+        gl.enableVertexAttribArray(aTexCoord);
+        gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, mesh.texcoords, gl.STATIC_DRAW);
+        gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, 0, 0);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, mesh.texture);
+        gl.uniform1i(uSampler, 0);
+        
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBufferId);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.STATIC_DRAW);
+        
+        gl.drawElements(gl.TRIANGLES, mesh.indices.length, gl.UNSIGNED_SHORT, 0);
+    }
+}
