@@ -90,7 +90,8 @@ class AnimationSystem {
       }
     }
     
-    // Update max frame
+    // Update max frame - only reduce if all keyframes are deleted
+    // Otherwise, preserve maxFrame to allow users to add keyframes at higher frames
     let maxFrame = 0;
     for (const bodyPart in this.keyframes) {
       if (this.keyframes[bodyPart].length > 0) {
@@ -100,9 +101,15 @@ class AnimationSystem {
     }
     
     if (maxFrame > 0) {
-      this.maxFrame = maxFrame;
-      this.duration = this.maxFrame / this.frameRate;
+      // Only update maxFrame if it's higher than current (allow increases)
+      // Don't reduce maxFrame - preserve it so users can add keyframes at higher frames
+      if (maxFrame > this.maxFrame) {
+        this.maxFrame = maxFrame;
+        this.duration = this.maxFrame / this.frameRate;
+      }
+      // If maxFrame < this.maxFrame, keep this.maxFrame unchanged
     } else {
+      // Only reset to default if all keyframes are deleted
       this.maxFrame = 150;
       this.duration = 5.0;
     }

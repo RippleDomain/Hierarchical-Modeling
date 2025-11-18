@@ -44,11 +44,11 @@ let lastAnimTime = 0;
 const jointConstraints = {
   [torsoId]: [-180, 180],
   [head1Id]: [-45, 45],  [head2Id]: [-80, 80],
-  [leftUpperArmId]: [-180, 0],   [rightUpperArmId]: [0, 180],
+  [leftUpperArmId]: [-180, 0],   [rightUpperArmId]: [-90, 90],
   [leftLowerArmId]: [-135, 0],   [rightLowerArmId]: [-135, 0],
   [leftUpperLegId]: [-45, 75],   [rightUpperLegId]: [-45, 75],
   [leftLowerLegId]: [0, 135],    [rightLowerLegId]: [0, 135],
-  [leftUpperArmSideId]: [0,110], [rightUpperArmSideId]: [-110,0],
+  [leftUpperArmSideId]: [0,110], [rightUpperArmSideId]: [-110,90],
   [leftUpperLegSideId]: [-30,30],[rightUpperLegSideId]: [-30,30],
   [leftHandId]: [-45,45],          [rightHandId]: [-45,45]
 };
