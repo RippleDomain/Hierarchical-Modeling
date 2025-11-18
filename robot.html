@@ -1,204 +1,228 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="utf-8" />
-    <title>Hierarchical Robot</title>
+  <meta charset="utf-8" />
+  <title>Hierarchical Robot (GLB + Camera)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <script id="vertex-shader" type="x-shader/x-vertex">
-    attribute  vec4 vPosition;
-    attribute  vec4 vColor;
-    varying    vec4 fColor;
-    uniform    mat4 modelViewMatrix;
-    uniform    mat4 projectionMatrix;
+  <style>
+    :root { --sidebar-w: 340px; }
+    * { box-sizing: border-box; font-family: system-ui, Segoe UI, Roboto, Arial, sans-serif; }
+    body { margin: 0; background:#111; color:#eee; }
+    header { padding: 10px 16px; display:flex; align-items:center; gap:12px; background:#181818; border-bottom:1px solid #222; }
+    header h1 { font-size: 16px; margin:0 12px 0 0; color:#cfd3ff; }
+    header button { background:#2a2a2a; color:#ddd; border:1px solid #333; padding:8px 12px; border-radius:8px; cursor:pointer; }
+    header button:hover { background:#323232; }
+    .wrap { display:flex; height: calc(100vh - 52px); }
+    .view {
+      flex:1; display:flex; align-items:center; justify-content:center; min-width: 600px;
+      background: radial-gradient(1200px 600px at 40% -10%, #2a2a2a 0%, #121212 60%);
+    }
+    #gl-canvas {
+      width: calc(100% - 24px);
+      height: calc(100% - 24px);
+      max-width: 1600px; max-height: 1000px;
+      border:1px solid #222; border-radius:12px; background:#101010;
+      display:block;
+    }
+    aside {
+      width: var(--sidebar-w); overflow:auto; padding:14px; background:#151515; border-left:1px solid #222;
+    }
+    fieldset { border:1px solid #2b2b2b; border-radius:10px; margin:0 0 14px; }
+    legend { padding:0 8px; color:#c7ffd0; }
+    .row { display:grid; grid-template-columns: 1fr auto; align-items:center; gap:10px; padding:8px 12px; }
+    .row label { font-size: 13px; color:#ddd; }
+    .row .val { font-variant-numeric: tabular-nums; color:#93e3ff; }
+    input[type="range"] { width:100%; }
+    small.tip { display:block; opacity:.8; padding:6px 0 0 12px; color:#c9c9c9; }
+  </style>
 
-    void main()
-    {
-        fColor      = vColor;
-        gl_Position = projectionMatrix * modelViewMatrix * vPosition;
+  <!-- Picking shaders (solid color by limb) -->
+<script id="pick-vertex" type="x-shader/x-vertex">
+    attribute vec3 vPosition;
+    uniform mat4 uMVPMatrix;
+    uniform mat4 model;
+    void main() {
+      gl_Position = uMVPMatrix * model * vec4(vPosition, 1.0);
     }
     </script>
-
-    <script id="fragment-shader" type="x-shader/x-fragment">
+    
+    <script id="pick-fragment" type="x-shader/x-fragment">
     precision mediump float;
-    varying   vec4 fColor;
-
-    void main()
-    {
-        gl_FragColor = fColor;
+    uniform vec3 uPickColor;
+    void main() { gl_FragColor = vec4(uPickColor, 1.0); }
+    </script>
+    
+    <!-- Outline shaders (constant yellow, drawn as backfaces slightly scaled) -->
+    <script id="outline-vertex" type="x-shader/x-vertex">
+    attribute vec3 vPosition;
+    uniform mat4 uMVPMatrix;
+    uniform mat4 model;
+    void main() {
+      gl_Position = uMVPMatrix * model * vec4(vPosition, 1.0);
     }
     </script>
-
-    <script id="picking-vertex-shader" type="x-shader/x-vertex">
-    attribute  vec4 vPosition;
-    uniform    mat4 modelViewMatrix;
-    uniform    mat4 projectionMatrix;
-    uniform    vec4 pickingColor;
-
-    varying vec4 vPickingColor;
-
-    void main()
-    {
-        vPickingColor = pickingColor;
-        gl_Position = projectionMatrix * modelViewMatrix * vPosition;
-    }
-    </script>
-
-    <script id="picking-fragment-shader" type="x-shader/x-fragment">
+    
+    <script id="outline-fragment" type="x-shader/x-fragment">
     precision mediump float;
-    varying vec4 vPickingColor;
-
-    void main()
-    {
-        gl_FragColor = vPickingColor;
-    }
+    void main() { gl_FragColor = vec4(1.0, 1.0, 0.0, 1.0); } /* yellow */
     </script>
 
-    <script type="text/javascript" src="Common/webgl-utils.js"></script>
-    <script type="text/javascript" src="Common/initShaders.js"></script>
-    <script type="text/javascript" src="Common/MV.js"></script>
-    <script type="text/javascript" src="robot.js"></script>
+  <!-- Shaders (keeps triangle.js lighting idea: textured Phong) -->
+  <script id="vertex-shader" type="x-shader/x-vertex">
+    attribute vec3 vPosition;
+    attribute vec3 aNormal;
+    attribute vec2 aTexCoord;
+    
+    uniform mat4 uMVPMatrix;
+    uniform mat4 model;
+    
+    varying vec3 vFragPos;
+    varying vec3 vNormal;
+    varying vec2 vTex;
+    
+    void main() {
+        vec4 worldPos = model * vec4(vPosition, 1.0);
+        gl_Position = uMVPMatrix * worldPos;
+    
+        // OK for rigid/uniform-scale transforms
+        mat3 normalMat = mat3(model);
+        vNormal = normalize(normalMat * aNormal);
+    
+        vFragPos = worldPos.xyz;
+        vTex = aTexCoord;
+    }
+    </script>
+    
+
+  <script id="fragment-shader" type="x-shader/x-fragment">
+  precision mediump float;
+
+  varying vec3 vFragPos;
+  varying vec3 vNormal;
+  varying vec2 vTex;
+
+  uniform vec3 uLightPosition;
+  uniform vec3 uViewPosition;
+  uniform sampler2D uSampler;
+
+  void main() {
+      vec3 albedo = texture2D(uSampler, vTex).rgb;
+
+      vec3 N = normalize(vNormal);
+      vec3 L = normalize(uLightPosition - vFragPos);
+      vec3 V = normalize(uViewPosition - vFragPos);
+      vec3 H = normalize(L + V);
+
+      float diff = max(dot(N, L), 0.0);
+      float spec = pow(max(dot(N, H), 0.0), 32.0);
+
+      vec3 ambient  = 0.20 * albedo;
+      vec3 diffuse  = 0.75 * diff * albedo;
+      vec3 specular = 0.35 * spec * vec3(1.0);
+
+      gl_FragColor = vec4(ambient + diffuse + specular, 1.0);
+  }
+  </script>
+
+  <!-- Common utils you already have -->
+  <script src="Common/webgl-utils.js"></script>
+  <script src="Common/initShaders.js"></script>
+  <script src="Common/MV.js"></script>
+
+  <!-- AssimpJS (ensure the path points to your copy) -->
+  <!-- Example: <script src="assimpjs/assimpjs.js"></script> -->
+  <script src="assimp/assimpjs.js"></script>
+
+  <!-- Loader + Main -->
+  <script src="glb-loader.js"></script>
+  <script src="robot.js"></script>
 </head>
 <body>
+  <header>
+    <h1>Hierarchical Robot (GLB)</h1>
+    <button id="btnResetPose">Reset Pose</button>
+    <button id="btnResetCamera">Reset Camera</button>
+    <span style="margin-left:auto; opacity:.8; font-size:12px;">Controls: drag = orbit · <b>Shift</b>+drag = pan · wheel = zoom</span>
+  </header>
 
-<h3>Torso &amp; Head</h3>
+  <div class="wrap">
+    <div class="view">
+      <canvas id="gl-canvas" width="1280" height="800">
+        Oops ... your browser doesn't support the HTML5 canvas element
+      </canvas>
+    </div>
 
-<div>
-  Torso rotation (twist) -180
-  <input id="slider0" type="range"
-         min="-180" max="180" step="5" value="0" />
-  180
-</div><br/>
+    <aside>
+      <fieldset>
+        <legend>Torso &amp; Head</legend>
+        <div class="row">
+          <label for="slider0">Torso twist (°)</label>
+          <span class="val" id="v0">0</span>
+        </div>
+        <input id="slider0" type="range" min="-180" max="180" step="1" value="0" />
 
-<div>
-  Head turn (yaw) -80
-  <input id="slider10" type="range"
-         min="-80" max="80" step="5" value="0" />
-  80
-</div><br/>
+        <div class="row">
+          <label for="slider10">Head yaw (°)</label>
+          <span class="val" id="v10">0</span>
+        </div>
+        <input id="slider10" type="range" min="-80" max="80" step="1" value="0" />
 
-<div>
-  Head nod (pitch) -45
-  <input id="slider1" type="range"
-         min="-45" max="45" step="5" value="0" />
-  45
-</div><br/>
+        <div class="row">
+          <label for="slider1">Head pitch (°)</label>
+          <span class="val" id="v1">0</span>
+        </div>
+        <input id="slider1" type="range" min="-45" max="45" step="1" value="0" />
+      </fieldset>
 
+      <fieldset>
+        <legend>Left Arm</legend>
+        <div class="row"><label for="slider2">Shoulder pitch</label><span class="val" id="v2">0</span></div>
+        <input id="slider2" type="range" min="-180" max="0" step="1" value="0" />
+        <div class="row"><label for="slider11">Shoulder abduction</label><span class="val" id="v11">0</span></div>
+        <input id="slider11" type="range" min="0" max="110" step="1" value="0" />
+        <div class="row"><label for="slider3">Elbow flex</label><span class="val" id="v3">0</span></div>
+        <input id="slider3" type="range" min="-135" max="0" step="1" value="0" />
+        <div class="row"><label for="slider15">Hand inward</label><span class="val" id="v15">0</span></div>
+        <input id="slider15" type="range" min="-45" max="45" step="1" value="0" />
+      </fieldset>
 
-<h3>Left Arm</h3>
+      <fieldset>
+        <legend>Right Arm</legend>
+        <div class="row"><label for="slider4">Shoulder pitch</label><span class="val" id="v4">0</span></div>
+        <input id="slider4" type="range" min="0" max="180" step="1" value="0" />
+        <div class="row"><label for="slider12">Shoulder abduction</label><span class="val" id="v12">0</span></div>
+        <input id="slider12" type="range" min="-110" max="0" step="1" value="0" />
+        <div class="row"><label for="slider5">Elbow flex</label><span class="val" id="v5">0</span></div>
+        <input id="slider5" type="range" min="-135" max="0" step="1" value="0" />
+        <div class="row"><label for="slider16">Hand inward</label><span class="val" id="v16">0</span></div>
+        <input id="slider16" type="range" min="-45" max="45" step="1" value="0" />
+      </fieldset>
 
-<div>
-  Left shoulder pitch (front/back) -180
-  <input id="slider2" type="range"
-         min="-180" max="0" step="5" value="0" />
-  0
-</div><br/>
+      <fieldset>
+        <legend>Left Leg</legend>
+        <div class="row"><label for="slider6">Hip pitch</label><span class="val" id="v6">0</span></div>
+        <input id="slider6" type="range" min="-45" max="75" step="1" value="0" />
+        <div class="row"><label for="slider13">Hip abduction</label><span class="val" id="v13">0</span></div>
+        <input id="slider13" type="range" min="-30" max="30" step="1" value="0" />
+        <div class="row"><label for="slider7">Knee flex</label><span class="val" id="v7">0</span></div>
+        <input id="slider7" type="range" min="0" max="135" step="1" value="0" />
+      </fieldset>
 
-<div>
-  Left shoulder abduction (side raise) 0
-  <input id="slider11" type="range"
-         min="0" max="110" step="5" value="0" />
-  110
-</div><br/>
+      <fieldset>
+        <legend>Right Leg</legend>
+        <div class="row"><label for="slider8">Hip pitch</label><span class="val" id="v8">0</span></div>
+        <input id="slider8" type="range" min="-45" max="75" step="1" value="0" />
+        <div class="row"><label for="slider14">Hip abduction</label><span class="val" id="v14">0</span></div>
+        <input id="slider14" type="range" min="-30" max="30" step="1" value="0" />
+        <div class="row"><label for="slider9">Knee flex</label><span class="val" id="v9">0</span></div>
+        <input id="slider9" type="range" min="0" max="135" step="1" value="0" />
+      </fieldset>
 
-<div>
-  Left elbow flex -135
-  <input id="slider3" type="range"
-         min="-135" max="0" step="5" value="0" />
-  0
-</div><br/>
-
-<div>
-    Left hand bend (inward) 0
-    <input id="slider15" type="range"
-           min="0" max="45" step="5" value="0" />
-    45
-  </div><br/>
-
-<h3>Right Arm</h3>
-
-<div>
-  Right shoulder pitch (front/back) 0
-  <input id="slider4" type="range"
-         min="0" max="180" step="5" value="0" />
-  180
-</div><br/>
-
-<div>
-  Right shoulder abduction (side raise) -110
-  <input id="slider12" type="range"
-         min="-110" max="0" step="5" value="0" />
-  0
-</div><br/>
-
-<div>
-  Right elbow flex -135
-  <input id="slider5" type="range"
-         min="-135" max="0" step="5" value="0" />
-  0
-</div><br/>
-
-<div>
-    Right hand bend (inward) 0
-    <input id="slider16" type="range"
-           min="0" max="45" step="5" value="0" />
-    45
-  </div><br/>
-
-<h3>Left Leg</h3>
-
-<div>
-  Left hip pitch (front/back) -45
-  <input id="slider6" type="range"
-         min="-45" max="75" step="5" value="0" />
-  75
-</div><br/>
-
-<div>
-  Left hip abduction (side) -30
-  <input id="slider13" type="range"
-         min="-30" max="30" step="5" value="0" />
-  30
-</div><br/>
-
-<div>
-  Left knee flex 0
-  <input id="slider7" type="range"
-         min="0" max="135" step="5" value="0" />
-  135
-</div><br/>
-
-
-<h3>Right Leg</h3>
-
-<div>
-  Right hip pitch (front/back) -45
-  <input id="slider8" type="range"
-         min="-45" max="75" step="5" value="0" />
-  75
-</div><br/>
-
-<div>
-  Right hip abduction (side) -30
-  <input id="slider14" type="range"
-         min="-30" max="30" step="5" value="0" />
-  30
-</div><br/>
-
-<div>
-  Right knee flex 0
-  <input id="slider9" type="range"
-         min="0" max="135" step="5" value="0" />
-  135
-</div><br/>
-
-
-<div>
-  <button id="animateBtn" onclick="toggleAnimation()">Start Animation</button>
-</div><br/>
-
-<canvas id="gl-canvas" width="512" height="512">
-  Oops ... your browser doesn't support the HTML5 canvas element
-</canvas>
-
+      <small class="tip">Tip: ensure GLB node names match:
+        <code>torso</code>, <code>head</code>, <code>left_arm_high</code>, <code>left_arm_low</code>, <code>right_arm_high</code>, <code>right_arm_low</code>, <code>left_leg_high</code>, <code>left_leg_low</code>, <code>right_leg_high</code>, <code>right_leg_low</code>, <code>left_hand</code>, <code>right_hand</code>.
+      </small>
+    </aside>
+  </div>
 </body>
 </html>
