@@ -735,13 +735,13 @@ window.onload = async function(){
         const dx = e.clientX - limbDrag.lastX;
         const dy = e.clientY - limbDrag.lastY;
 
-        if (dx !== 0){
-          theta[map.primary] = clampJoint(map.primary, theta[map.primary] + dx * limbDragSensitivity);
+        if (dy !== 0){
+          theta[map.primary] = clampJoint(map.primary, theta[map.primary] + dy * limbDragSensitivity);
           const lab = document.getElementById(`v${map.primary}`); if (lab) lab.textContent = String(theta[map.primary] | 0);
           const sld = document.getElementById(`slider${map.primary}`); if (sld) sld.value = theta[map.primary];
         }
-        if (map.secondary != null && dy !== 0){
-          theta[map.secondary] = clampJoint(map.secondary, theta[map.secondary] - dy * limbDragSensitivity);
+        if (map.secondary != null && dx !== 0){
+          theta[map.secondary] = clampJoint(map.secondary, theta[map.secondary] - dx * limbDragSensitivity);
           const lab2 = document.getElementById(`v${map.secondary}`); if (lab2) lab2.textContent = String(theta[map.secondary] | 0);
           const sld2 = document.getElementById(`slider${map.secondary}`); if (sld2) sld2.value = theta[map.secondary];
         }

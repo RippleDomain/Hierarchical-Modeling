@@ -14,12 +14,12 @@ class AnimationSystem {
     this.currentFrame = 0;
     this.isPlaying = false;
     this.playbackSpeed = 1.0;
-    this.frameRate = 30; // frames per second
+    this.frameRate = 120; // frames per second
     this.lastTime = 0;
     this.animationTime = 0; // in seconds
     this.loop = true;
     this.duration = 5.0; // default duration in seconds
-    this.maxFrame = 150; // default max frame (5 seconds at 30fps)
+    this.maxFrame = 600; // default max frame (5 seconds at 30fps)
     
     // Initialize keyframes for each body part
     for (const bodyPart in bodyPartMap) {
@@ -110,7 +110,7 @@ class AnimationSystem {
       // If maxFrame < this.maxFrame, keep this.maxFrame unchanged
     } else {
       // Only reset to default if all keyframes are deleted
-      this.maxFrame = 150;
+      this.maxFrame = 600;
       this.duration = 5.0;
     }
   }
