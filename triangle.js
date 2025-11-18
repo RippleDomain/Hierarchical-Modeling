@@ -4,6 +4,7 @@ let program;
 let rootNode;
 let uMVPMatrix;
 let projectionMatrix;
+let uViewPosition;
 
 // camera in spherical coordinates
 let cameraRadius = 2;
@@ -32,6 +33,11 @@ function updateCamera() {
     
     let MVPMatrix = mult(projectionMatrix, lookAtMatrix);
     gl.uniformMatrix4fv(uMVPMatrix, false, flatten(MVPMatrix));
+    
+    // Update view position for specular lighting
+    if (uViewPosition) {
+        gl.uniform3fv(uViewPosition, absoluteCameraPos);
+    }
     
     if (rootNode) {
         const meshes = [];
@@ -75,6 +81,9 @@ window.onload = function init() {
     uMVPMatrix = gl.getUniformLocation(program, "uMVPMatrix");
     let uLightPosition = gl.getUniformLocation(program, "uLightPosition");
     gl.uniform3f(uLightPosition, 0, 2, 50);
+    
+    // Get uniform location for view position (for specular lighting)
+    uViewPosition = gl.getUniformLocation(program, "uViewPosition");
     
     canvas.addEventListener('mousedown', (e) => {
         isDragging = true;

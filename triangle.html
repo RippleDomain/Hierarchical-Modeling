@@ -24,13 +24,24 @@
       varying vec3 vNormal;
       uniform sampler2D uSampler;
       uniform vec3 uLightPosition;
+      uniform vec3 uViewPosition;
 
       void main(void) {
         vec3 norm = normalize(vNormal);
         vec3 lightDir = normalize(uLightPosition - vPos.xyz);
+        
+        vec3 ambient = vec3(0.2);
+        
         float diff = max(dot(norm, lightDir), 0.0);
+        
+        vec3 viewDir = normalize(uViewPosition - vPos.xyz);
+        vec3 reflectDir = reflect(-lightDir, norm);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 8.0);
+        float specular = 0.5 * spec;
 
-        gl_FragColor = vec4((diff + 0.2) * vec3(1,1,1),1) * texture2D(uSampler, vTexCoord);
+        vec3 lighting = ambient + diff + specular;
+        
+        gl_FragColor = vec4(lighting * vec3(1,1,1), 1.0) * texture2D(uSampler, vTexCoord);
       }
     </script>
 
