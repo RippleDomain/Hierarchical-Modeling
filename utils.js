@@ -2,6 +2,13 @@ function isPowerOf2(value) {
     return (value & (value - 1)) === 0;
 }
 
+function sphericalToCartesian(radius, theta, phi) {
+    let x = radius * Math.sin(phi) * Math.cos(theta);
+    let y = radius * Math.cos(phi);
+    let z = radius * Math.sin(phi) * Math.sin(theta);
+    return [x, y, z];
+}
+
 async function loadTextureFromBase64(gl, texture, base64, mimeType = 'image/png') {
     const image = new Image();
     const prefix = base64.startsWith('data:') ? '' : `data:${mimeType};base64,`;
