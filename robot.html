@@ -35,6 +35,20 @@
     .row .val { font-variant-numeric: tabular-nums; color:#93e3ff; }
     input[type="range"] { width:100%; }
     small.tip { display:block; opacity:.8; padding:6px 0 0 12px; color:#c9c9c9; }
+    .anim-controls { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+    .anim-controls button { flex:1; min-width:60px; background:#2a2a2a; color:#ddd; border:1px solid #333; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:12px; }
+    .anim-controls button:hover { background:#323232; }
+    .anim-controls button.active { background:#4a6fa5; border-color:#5a8fc5; }
+    .timeline-container { margin:8px 0; }
+    .timeline-label { display:flex; justify-content:space-between; font-size:11px; color:#aaa; margin-bottom:4px; }
+    #timeline { width:100%; }
+    .keyframe-list { max-height:120px; overflow-y:auto; margin-top:8px; font-size:11px; }
+    .keyframe-item { display:flex; justify-content:space-between; align-items:center; padding:4px 8px; background:#1a1a1a; border-radius:4px; margin:2px 0; }
+    .keyframe-item button { background:#3a3a3a; border:1px solid #444; color:#ddd; padding:2px 6px; border-radius:3px; cursor:pointer; font-size:10px; }
+    .keyframe-item button:hover { background:#4a4a4a; }
+    input[type="file"] { display:none; }
+    .file-btn { background:#2a2a2a; color:#ddd; border:1px solid #333; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:12px; display:inline-block; }
+    .file-btn:hover { background:#323232; }
   </style>
 
   <!-- Picking shaders (solid color by limb) -->
@@ -136,6 +150,7 @@
 
   <!-- Loader + Main -->
   <script src="glb-loader.js"></script>
+  <script src="animation.js"></script>
   <script src="robot.js"></script>
 </head>
 <body>
@@ -217,6 +232,85 @@
         <input id="slider14" type="range" min="-30" max="30" step="1" value="0" />
         <div class="row"><label for="slider9">Knee flex</label><span class="val" id="v9">0</span></div>
         <input id="slider9" type="range" min="0" max="135" step="1" value="0" />
+      </fieldset>
+
+      <fieldset>
+        <legend>Animation</legend>
+        <div style="margin-bottom:8px; font-size:11px; color:#aaa;">
+          Select body parts to animate (leave all unchecked for all parts):
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:4px; margin-bottom:8px; font-size:11px;">
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+            <input type="checkbox" class="body-part-checkbox" value="torso" />
+            <span>Torso</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+            <input type="checkbox" class="body-part-checkbox" value="head" />
+            <span>Head</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+            <input type="checkbox" class="body-part-checkbox" value="left_arm_high" />
+            <span>Left Arm (Upper)</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+            <input type="checkbox" class="body-part-checkbox" value="left_arm_low" />
+            <span>Left Arm (Lower)</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+            <input type="checkbox" class="body-part-checkbox" value="right_arm_high" />
+            <span>Right Arm (Upper)</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+            <input type="checkbox" class="body-part-checkbox" value="right_arm_low" />
+            <span>Right Arm (Lower)</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+            <input type="checkbox" class="body-part-checkbox" value="left_leg_high" />
+            <span>Left Leg (Upper)</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+            <input type="checkbox" class="body-part-checkbox" value="left_leg_low" />
+            <span>Left Leg (Lower)</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+            <input type="checkbox" class="body-part-checkbox" value="right_leg_high" />
+            <span>Right Leg (Upper)</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+            <input type="checkbox" class="body-part-checkbox" value="right_leg_low" />
+            <span>Right Leg (Lower)</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+            <input type="checkbox" class="body-part-checkbox" value="left_hand" />
+            <span>Left Hand</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+            <input type="checkbox" class="body-part-checkbox" value="right_hand" />
+            <span>Right Hand</span>
+          </label>
+        </div>
+        <div class="anim-controls">
+          <button id="btnPlayPause">Play</button>
+          <button id="btnStop">Stop</button>
+          <button id="btnSetKeyframe">Set Keyframe</button>
+          <button id="btnDeleteKeyframe">Delete Keyframe</button>
+        </div>
+        <div class="timeline-container">
+          <div class="timeline-label">
+            <span>Frame: <span id="currentFrameDisplay">0</span> / <span id="maxFrameDisplay">150</span></span>
+            <span id="timeDisplay">0.0s</span>
+          </div>
+          <input id="timeline" type="range" min="0" max="150" step="1" value="0" />
+        </div>
+        <div class="anim-controls" style="margin-top:8px;">
+          <label class="file-btn" for="loadAnimFile">Load Animation</label>
+          <input type="file" id="loadAnimFile" accept=".json" />
+          <button id="btnSaveAnimation">Save Animation</button>
+          <button id="btnClearAnimation">Clear</button>
+        </div>
+        <div class="keyframe-list" id="keyframeList">
+          <div style="color:#888; padding:4px; text-align:center;">No keyframes</div>
+        </div>
       </fieldset>
 
       <small class="tip">Tip: ensure GLB node names match:

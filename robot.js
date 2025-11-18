@@ -35,6 +35,11 @@ const torsoId=0, head1Id=1, leftUpperArmId=2, leftLowerArmId=3, rightUpperArmId=
 const numAngles = 17;
 const theta = new Array(numAngles).fill(0);
 
+/** ========== Animation System ========== */
+let animSystem = null;
+let isAnimating = false; // Whether animation is controlling the robot
+let lastAnimTime = 0;
+
 /* Constraints copied from your placeholder rig */
 const jointConstraints = {
   [torsoId]: [-180, 180],
@@ -45,7 +50,7 @@ const jointConstraints = {
   [leftLowerLegId]: [0, 135],    [rightLowerLegId]: [0, 135],
   [leftUpperArmSideId]: [0,110], [rightUpperArmSideId]: [-110,0],
   [leftUpperLegSideId]: [-30,30],[rightUpperLegSideId]: [-30,30],
-  [leftHandId]: [0,45],          [rightHandId]: [0,45]
+  [leftHandId]: [-45,45],          [rightHandId]: [-45,45]
 };
 function clampJoint(id, val){
   const lim = jointConstraints[id];
@@ -112,7 +117,7 @@ function buildPoseTransforms(){
   pose[NAME.rLegLo] = RX(theta[rightLowerLegId]);
   // Hands (positive = inward for both) — fixed sign for right hand
   pose[NAME.lHand] = RZ(-theta[leftHandId]);
-  pose[NAME.rHand] = RZ(-theta[rightHandId]);
+  pose[NAME.rHand] = RX(theta[rightHandId]);
 
   return pose;
 }
@@ -185,6 +190,28 @@ function renderMeshes(items){
 /** Draw the whole scene with current camera & pose */
 function updateCameraAndDraw(){
   if (!gl || !program) return;
+
+  // Update animation if playing
+  if (animSystem && animSystem.isPlaying) {
+    const now = performance.now() / 1000;
+    if (lastAnimTime > 0) {
+      const deltaTime = now - lastAnimTime;
+      animSystem.update(deltaTime);
+      
+      // Apply interpolated angles (use current theta as defaults for parts without keyframes)
+      const animAngles = animSystem.getCurrentAngles(theta.slice());
+      for (let i = 0; i < numAngles; i++) {
+        theta[i] = animAngles[i];
+      }
+      
+      // Update UI sliders and labels
+      updateSlidersFromTheta();
+      updateAnimationUI();
+    }
+    lastAnimTime = now;
+  } else {
+    lastAnimTime = 0;
+  }
 
   const eye = sphericalToEye();
   const V = lookAt(eye, lookAtPoint, [0,1,0]);
@@ -378,6 +405,109 @@ function resetPose(){
     if (s){ s.value = theta[i]; const lab = document.getElementById(`v${i}`); if (lab) lab.textContent = "0"; }
   }
 }
+
+/** Update slider values from theta array */
+function updateSlidersFromTheta(){
+  for (let i=0;i<numAngles;i++){
+    const sId = ({
+      0:"slider0",1:"slider1",2:"slider2",3:"slider3",4:"slider4",5:"slider5",
+      6:"slider6",7:"slider7",8:"slider8",9:"slider9",10:"slider10",11:"slider11",
+      12:"slider12",13:"slider13",14:"slider14",15:"slider15",16:"slider16"
+    })[i];
+    const s = document.getElementById(sId);
+    if (s) {
+      s.value = theta[i];
+      const lab = document.getElementById(`v${i}`);
+      if (lab) lab.textContent = String(theta[i] | 0);
+    }
+  }
+}
+
+/** Update animation UI elements */
+function updateAnimationUI(){
+  if (!animSystem) return;
+  
+  const frameDisplay = document.getElementById("currentFrameDisplay");
+  const maxFrameDisplay = document.getElementById("maxFrameDisplay");
+  const timeDisplay = document.getElementById("timeDisplay");
+  const timeline = document.getElementById("timeline");
+  const playPauseBtn = document.getElementById("btnPlayPause");
+  
+  if (frameDisplay) frameDisplay.textContent = animSystem.currentFrame;
+  if (maxFrameDisplay) maxFrameDisplay.textContent = animSystem.maxFrame;
+  if (timeDisplay) timeDisplay.textContent = animSystem.animationTime.toFixed(1) + "s";
+  if (timeline) {
+    timeline.max = animSystem.maxFrame;
+    timeline.value = animSystem.currentFrame;
+  }
+  if (playPauseBtn) {
+    playPauseBtn.textContent = animSystem.isPlaying ? "Pause" : "Play";
+    playPauseBtn.classList.toggle("active", animSystem.isPlaying);
+  }
+  
+  updateKeyframeList();
+}
+
+/** Get selected body parts from UI checkboxes */
+function getSelectedBodyParts() {
+  const checkboxes = document.querySelectorAll('.body-part-checkbox:checked');
+  if (checkboxes.length === 0) {
+    // If no body parts selected, return all (null means all)
+    return null;
+  }
+  return Array.from(checkboxes).map(cb => cb.value);
+}
+
+/** Update keyframe list display */
+function updateKeyframeList(){
+  if (!animSystem) return;
+  const listEl = document.getElementById("keyframeList");
+  if (!listEl) return;
+  
+  const keyframes = animSystem.getAllKeyframes();
+  
+  if (keyframes.length === 0) {
+    listEl.innerHTML = '<div style="color:#888; padding:4px; text-align:center;">No keyframes</div>';
+    return;
+  }
+  
+  // Group by frame
+  const byFrame = {};
+  for (const kf of keyframes) {
+    if (!byFrame[kf.frame]) {
+      byFrame[kf.frame] = [];
+    }
+    byFrame[kf.frame].push(kf.bodyPart);
+  }
+  
+  listEl.innerHTML = Object.keys(byFrame).sort((a, b) => parseInt(a) - parseInt(b)).map(frame => {
+    const time = (parseInt(frame) / animSystem.frameRate).toFixed(1);
+    const bodyParts = byFrame[frame].map(bp => {
+      // Convert internal names to display names
+      const displayNames = {
+        'torso': 'Torso',
+        'head': 'Head',
+        'left_arm_high': 'L Arm (U)',
+        'left_arm_low': 'L Arm (L)',
+        'right_arm_high': 'R Arm (U)',
+        'right_arm_low': 'R Arm (L)',
+        'left_leg_high': 'L Leg (U)',
+        'left_leg_low': 'L Leg (L)',
+        'right_leg_high': 'R Leg (U)',
+        'right_leg_low': 'R Leg (L)',
+        'left_hand': 'L Hand',
+        'right_hand': 'R Hand'
+      };
+      return displayNames[bp] || bp;
+    }).join(', ');
+    return `
+      <div class="keyframe-item">
+        <span>Frame ${frame} (${time}s): ${bodyParts}</span>
+        <button onclick="animSystem.setFrame(${frame}); updateAnimationUI();">Go to</button>
+      </div>
+    `;
+  }).join('');
+}
 function resetCamera(){
   cameraRadius = 2.0;
   cameraTheta  = 0.0;
@@ -446,6 +576,137 @@ window.onload = async function(){
   const btnResetCamera = document.getElementById("btnResetCamera");
   if (btnResetPose)   btnResetPose.onclick   = ()=> resetPose();
   if (btnResetCamera) btnResetCamera.onclick = ()=> resetCamera();
+
+  // Initialize animation system with body part mapping
+  const bodyPartMap = {
+    [NAME.torso]: [torsoId],
+    [NAME.head]: [head1Id, head2Id],
+    [NAME.lArmHi]: [leftUpperArmId, leftUpperArmSideId],
+    [NAME.lArmLo]: [leftLowerArmId],
+    [NAME.rArmHi]: [rightUpperArmId, rightUpperArmSideId],
+    [NAME.rArmLo]: [rightLowerArmId],
+    [NAME.lLegHi]: [leftUpperLegId, leftUpperLegSideId],
+    [NAME.lLegLo]: [leftLowerLegId],
+    [NAME.rLegHi]: [rightUpperLegId, rightUpperLegSideId],
+    [NAME.rLegLo]: [rightLowerLegId],
+    [NAME.lHand]: [leftHandId],
+    [NAME.rHand]: [rightHandId]
+  };
+  animSystem = new AnimationSystem(numAngles, bodyPartMap);
+  updateAnimationUI();
+
+  // Animation controls
+  const btnPlayPause = document.getElementById("btnPlayPause");
+  const btnStop = document.getElementById("btnStop");
+  const btnSetKeyframe = document.getElementById("btnSetKeyframe");
+  const btnDeleteKeyframe = document.getElementById("btnDeleteKeyframe");
+  const btnSaveAnimation = document.getElementById("btnSaveAnimation");
+  const btnClearAnimation = document.getElementById("btnClearAnimation");
+  const timeline = document.getElementById("timeline");
+  const loadAnimFile = document.getElementById("loadAnimFile");
+
+  if (btnPlayPause) {
+    btnPlayPause.onclick = () => {
+      if (animSystem.isPlaying) {
+        animSystem.pause();
+      } else {
+        animSystem.play();
+        lastAnimTime = performance.now() / 1000;
+      }
+      updateAnimationUI();
+    };
+  }
+
+  if (btnStop) {
+    btnStop.onclick = () => {
+      animSystem.stop();
+      const animAngles = animSystem.getCurrentAngles(theta.slice());
+      for (let i = 0; i < numAngles; i++) {
+        theta[i] = animAngles[i];
+      }
+      updateSlidersFromTheta();
+      updateAnimationUI();
+    };
+  }
+
+  if (btnSetKeyframe) {
+    btnSetKeyframe.onclick = () => {
+      const selectedBodyParts = getSelectedBodyParts();
+      animSystem.setKeyframe(animSystem.currentFrame, theta.slice(), selectedBodyParts);
+      updateAnimationUI();
+    };
+  }
+
+  if (btnDeleteKeyframe) {
+    btnDeleteKeyframe.onclick = () => {
+      const selectedBodyParts = getSelectedBodyParts();
+      animSystem.removeKeyframe(animSystem.currentFrame, selectedBodyParts);
+      updateAnimationUI();
+    };
+  }
+
+  if (timeline) {
+    timeline.addEventListener("input", (e) => {
+      const frame = parseInt(e.target.value);
+      animSystem.setFrame(frame);
+      const animAngles = animSystem.getCurrentAngles(theta.slice());
+      for (let i = 0; i < numAngles; i++) {
+        theta[i] = animAngles[i];
+      }
+      updateSlidersFromTheta();
+      updateAnimationUI();
+    });
+  }
+
+  if (btnSaveAnimation) {
+    btnSaveAnimation.onclick = () => {
+      const json = animSystem.exportToJSON();
+      const blob = new Blob([JSON.stringify(json, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "robot-animation.json";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
+  }
+
+  if (loadAnimFile) {
+    loadAnimFile.addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          animSystem.importFromJSON(event.target.result);
+          // Update to current frame
+          const animAngles = animSystem.getCurrentAngles(theta.slice());
+          for (let i = 0; i < numAngles; i++) {
+            theta[i] = animAngles[i];
+          }
+          updateSlidersFromTheta();
+          updateAnimationUI();
+          alert("Animation loaded successfully!");
+        } catch (error) {
+          alert("Error loading animation: " + error.message);
+        }
+      };
+      reader.readAsText(file);
+      e.target.value = ""; // Reset file input
+    });
+  }
+
+  if (btnClearAnimation) {
+    btnClearAnimation.onclick = () => {
+      if (confirm("Clear all keyframes?")) {
+        animSystem.clearKeyframes();
+        updateAnimationUI();
+      }
+    };
+  }
 
   // Mouse input:
   canvas.addEventListener("mousedown", (e) => {
