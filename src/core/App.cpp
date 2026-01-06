@@ -1,5 +1,6 @@
 #include "App.h"
 
+#include <filesystem>
 #include <iostream>
 #include <fstream>
 #include <chrono>
@@ -453,8 +454,13 @@ void App::drawImGui()
 
     if (ImGui::Button("Save Animation JSON"))
     {
+        std::filesystem::create_directories("savedAnimations");
+
+        std::filesystem::path fileName = std::filesystem::path(saveAnimPath).filename();
+        std::filesystem::path outPath = std::filesystem::path("savedAnimations") / fileName;
+
         std::string text = animSystem.exportToJsonString();
-        std::ofstream out(saveAnimPath, std::ios::out | std::ios::trunc);
+        std::ofstream out(outPath.string(), std::ios::out | std::ios::trunc);
         out << text;
     }
 
@@ -462,8 +468,11 @@ void App::drawImGui()
 
     if (ImGui::Button("Load Animation JSON"))
     {
+        std::filesystem::path fileName = std::filesystem::path(loadAnimPath).filename();
+        std::filesystem::path inPath = std::filesystem::path("savedAnimations") / fileName;
+
         std::string text;
-        if (fileUtils::readFileToString(loadAnimPath, text))
+        if (fileUtils::readFileToString(inPath.string(), text))
         {
             try
             {

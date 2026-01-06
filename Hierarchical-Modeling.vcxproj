@@ -131,6 +131,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(SolutionDir)external\glfw\include;$(SolutionDir)external\glm;$(SolutionDir)external\stb;$(SolutionDir)external\imgui\include;$(SolutionDir)external\json\include;$(SolutionDir)external\raylib\include;$(SolutionDir)external\gltf;$(SolutionDir)external\glad\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -148,6 +149,7 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(SolutionDir)external\glfw\include;$(SolutionDir)external\glm;$(SolutionDir)external\stb;$(SolutionDir)external\imgui\include;$(SolutionDir)external\json\include;$(SolutionDir)external\raylib\include;$(SolutionDir)external\gltf;$(SolutionDir)external\glad\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -163,6 +165,7 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(SolutionDir)external\glfw\include;$(SolutionDir)external\glm;$(SolutionDir)external\stb;$(SolutionDir)external\imgui\include;$(SolutionDir)external\json\include;$(SolutionDir)external\raylib\include;$(SolutionDir)external\gltf;$(SolutionDir)external\glad\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -180,6 +183,7 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(SolutionDir)external\glfw\include;$(SolutionDir)external\glm;$(SolutionDir)external\stb;$(SolutionDir)external\imgui\include;$(SolutionDir)external\json\include;$(SolutionDir)external\raylib\include;$(SolutionDir)external\gltf;$(SolutionDir)external\glad\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
