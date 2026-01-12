@@ -1,6 +1,6 @@
 # Hierarchical Modeling (OpenGL)
 
-A self-contained C++/OpenGL application for **hierarchical pose control** and **keyframe animation** of a glTF robot rig.  
+A C++/OpenGL application for **hierarchical pose control** and **keyframe animation** of a glTF robot rig.  
 It supports **per-limb rotation constraints**, **color-based picking**, **outline highlighting**, and **JSON animation save/load** through an ImGui control panel and direct mouse interaction.
 
 ## Showcase Video of a Simple Animation Made with the App
