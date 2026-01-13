@@ -32,7 +32,7 @@ bool RobotRig::initialize()
     theta.assign(kJointCount, 0.0f);
     selectedNodeName.clear();
 
-    //Pickable node colors (id packed in RGB).
+    // Pickable node colors (id packed in RGB).
     std::vector<std::string> pickables =
     {
         kTorso, kHead,
@@ -54,7 +54,7 @@ bool RobotRig::initialize()
         pickIdToName[id] = pickables[i];
     }
 
-    //Limb drag mapping (dy = primary, dx = secondary).
+    // Limb drag mapping (dy = primary, dx = secondary).
     limbJointMap.clear();
     limbJointMap[kTorso] = { 0, -1 };
     limbJointMap[kHead] = { 1, 10 };
@@ -74,7 +74,7 @@ bool RobotRig::initialize()
     limbJointMap[kLHand] = { 15, 17 };
     limbJointMap[kRHand] = { 16, 18 };
 
-    //Animation system mapping.
+    // Animation system mapping.
     std::unordered_map<std::string, std::vector<int>> bodyPartMap;
     bodyPartMap[kTorso] = { 0 };
     bodyPartMap[kHead] = { 1, 10 };
@@ -126,7 +126,7 @@ void RobotRig::onResize(int w, int h)
 
 void RobotRig::update(float deltaTime)
 {
-    //Update animation when playing.
+    // Update animation when playing.
     if (animSystem.getIsPlaying())
     {
         animSystem.update(deltaTime);
@@ -149,7 +149,7 @@ void RobotRig::resetPose()
 
 float RobotRig::clampJoint(int id, float val) const
 {
-    //Clamp joint angles to constraints.
+    // Clamp joint angles to constraints.
     auto clampRange = [&](float v, float a, float b)
         {
             return std::max(a, std::min(b, v));
@@ -253,7 +253,7 @@ const AnimationSystem& RobotRig::getAnimationSystem() const
 
 std::unordered_map<std::string, glm::mat4> RobotRig::buildPoseTransforms() const
 {
-    //Build pose transforms using degrees.
+    // Build pose transforms using degrees.
     auto RX = [&](float deg)
         {
             return glm::rotate(glm::mat4(1.0f), glm::radians(deg), glm::vec3(1.0f, 0.0f, 0.0f));
@@ -362,7 +362,7 @@ std::string RobotRig::pickAtCursor(GLFWwindow* window, const glm::mat4& mvp, Sha
     double my = 0.0;
     glfwGetCursorPos(window, &mx, &my);
 
-    //Convert window coords to framebuffer pixel coords.
+    // Convert window coords to framebuffer pixel coords.
     int w = 0;
     int h = 0;
     glfwGetWindowSize(window, &w, &h);

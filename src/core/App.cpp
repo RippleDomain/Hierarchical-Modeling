@@ -284,7 +284,7 @@ void App::drawImGui()
         float maxA = 180.0f;
         robotRig.getJointLimits(i, minA, maxA);
 
-        //Clamp once so loaded animations / bad values don't appear out-of-range.
+        // Clamp once so loaded animations / bad values don't appear out-of-range.
         theta[i] = robotRig.clampJoint(i, theta[i]);
 
         const float eps = 0.0001f;
@@ -294,7 +294,7 @@ void App::drawImGui()
 
         if (restrained)
         {
-            //Grey-out styling to indicate the joint is constrained at its limit.
+            // Grey-out styling to indicate the joint is constrained at its limit.
             ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.20f, 0.20f, 0.20f, 1.00f));
             ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.24f, 0.24f, 0.24f, 1.00f));
             ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.24f, 0.24f, 0.24f, 1.00f));
@@ -304,7 +304,7 @@ void App::drawImGui()
 
         float v = theta[i];
 
-        //This prevents dragging beyond limits (because min/max are the real limits).
+        // This prevents dragging beyond limits (because min/max are the real limits).
         if (ImGui::SliderFloat(jointNames[i], &v, minA, maxA, "%.0f"))
         {
             theta[i] = robotRig.clampJoint(i, v);
